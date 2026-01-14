@@ -1,0 +1,12 @@
+version: "3.9"
+
+services:
+  py-app:
+    build: .
+    # Mount the current folder so you can edit files locally and see changes instantly.
+    # Remove the volume line if you prefer the container to use only the copied files.
+    volumes:
+      - .:/app
+    # Keep the container alive with an interactive terminal.
+    stdin_open: true   # equivalent to -i
+    tty: true          # equivalent to -t
