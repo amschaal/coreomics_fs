@@ -1,0 +1,5 @@
+# config.yaml
+canonical_root: /data/simplified/projects          # where <year>/<month>/<ID> lives
+views_root:      /data/simplified/views            # top‑level view container
+date_format:    "%Y_%m_%d"             # version folder name
+log_name:       build.log              # per‑run log file (inside version dir)
