@@ -5,7 +5,7 @@ from pathlib import Path
 # ---------- sanitisation helpers ----------
 def safe_name(s: str) -> str:
     """Lower‑case, replace spaces with '_' and strip unsafe chars."""
-    s = s.lower().replace(" ", "_")
+    s = s.upper().replace(" ", "_")
     return re.sub(r"[^\w\-\.]", "", s)
 
 def get_year_month(submitted: str):
@@ -18,14 +18,17 @@ def get_year_month(submitted: str):
 def get_pi_last_initial(proj):
     return safe_name(proj.get("PI Last Name", "")[:1])
 
-def get_pi_first_name(proj):
-    return safe_name(proj.get("PI First Name", ""))
+def get_pi_last_first(proj):
+    return safe_name(proj.get("PI Last Name", "") + "_" + proj.get("PI First Name", ""))
 
 def get_internal_id(proj):
-    return safe_name(proj.get("Internal ID", ""))
+    return safe_name(proj.get("Internal ID", proj.get("ID")))
 
 def get_institute(proj):
     return safe_name(proj.get("Institute", ""))
+
+def get_institute_first(proj):
+    return get_institute(proj)[:1]
 
 def get_year(proj):
     y, _ = get_year_month(proj["Submitted"])
@@ -40,15 +43,20 @@ def get_month(proj):
 VIEWS = {
     # Example from the description:
     "pi": [
-        # lambda p: "pi",
         get_pi_last_initial,
-        get_pi_first_name,
+        get_pi_last_first,
         get_internal_id,
     ],
     # Institute‑centric view with year/month grouping:
     "institute": [
-        # lambda p: "institute",
+        get_institute_first,
         get_institute,
+        get_year,
+        get_month,
+        get_internal_id,
+    ],
+    # Year/month grouping:
+    "monthly": [
         get_year,
         get_month,
         get_internal_id,

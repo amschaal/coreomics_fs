@@ -12,6 +12,7 @@ CANON_ROOT = Path(cfg["canonical_root"])
 VIEWS_ROOT = Path(cfg["views_root"])
 DATE_FMT   = cfg["date_format"]
 LOG_NAME   = cfg["log_name"]
+ERROR_LOG   = cfg["error_log"]
 
 # ----- utility ------------------------------------------------------------
 def log(msg, log_path):
@@ -26,6 +27,7 @@ def rel_symlink(target: Path, link: Path):
     if link.is_symlink() or link.exists():
         link.unlink()
     link.symlink_to(rel_target)
+    return rel_target
 
 # ----- read CSV -----------------------------------------------------------
 def read_projects(csv_path: Path):
@@ -43,6 +45,7 @@ def ensure_canonical(proj):
 
 # ----- build a single view version ----------------------------------------
 def build_view_version(view_name, comps, projects, version_dir, log_path):
+    error_log = version_dir / ERROR_LOG
     for proj in projects:
         # compute each component; abort on missing data
         parts = []
@@ -53,7 +56,7 @@ def build_view_version(view_name, comps, projects, version_dir, log_path):
                     raise ValueError
                 parts.append(val)
             except Exception:
-                log(f"Missing/invalid field for {proj['ID']} in view '{view_name}'", log_path)
+                log(f"Missing/invalid field for {proj['ID']} in view '{view_name}'", error_log)
                 parts = None
                 break
         if not parts:
@@ -62,7 +65,9 @@ def build_view_version(view_name, comps, projects, version_dir, log_path):
         canon = ensure_canonical(proj)
         leaf = version_dir.joinpath(*parts)
         leaf.parent.mkdir(parents=True, exist_ok=True)
-        rel_symlink(canon, leaf)
+        rel_target = rel_symlink(canon, leaf)
+        log(f"'{'/'.join(parts)}' -> '{rel_target}'", log_path)
+
 
 # ----- main ----------------------------------------------------------------
 def main(csv_file: str):
