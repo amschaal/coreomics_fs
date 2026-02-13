@@ -10,7 +10,7 @@ def safe_name(s: str) -> str:
 
 def get_year_month(submitted: str):
     """Extract YYYY and zero‑padded MM from ISO‑like timestamp."""
-    dt = submitted.split()[0]               # e.g. 2025-12-16
+    dt = submitted[:10].split()[0]               # e.g. 2025-12-16
     y, m, _ = dt.split("-")
     return y, f"{int(m):02d}"
 

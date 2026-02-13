@@ -2,7 +2,7 @@
 # build_views.py
 import csv, sys, os, shutil, datetime, json, yaml
 from pathlib import Path
-from views import VIEWS, safe_name
+from views import safe_name
 
 # ----- load config ---------------------------------------------------------
 with open("config.yaml") as f:
@@ -15,8 +15,9 @@ LOG_NAME   = cfg["log_name"]
 ERROR_LOG   = cfg["error_log"]
 
 # ----- utility ------------------------------------------------------------
-def log(msg, log_path):
-    print(msg)
+def log(msg, log_path, console=False):
+    if console:
+        print(msg)
     with open(log_path, "a") as lf:
         lf.write(msg + "\n")
 
@@ -30,16 +31,26 @@ def rel_symlink(target: Path, link: Path):
     return rel_target
 
 # ----- read CSV -----------------------------------------------------------
-def read_projects(csv_path: Path):
-    with open(csv_path, newline="") as cf:
-        rdr = csv.DictReader(cf)
-        return list(rdr)
+def read_projects(projects_path: Path):
+    if projects_path.suffix == '.csv':
+        with open(projects_path, newline="") as cf:
+            rdr = csv.DictReader(cf)
+            return list(rdr)
+    if projects_path.suffix == '.json':
+        with open(projects_path, newline="") as cf:
+            projects = json.load(cf)
+            if 'results' in projects:
+                return projects['results']
+            else:
+                return projects
 
 # ----- build canonical layout ---------------------------------------------
 def ensure_canonical(proj):
-    y, m = proj["Submitted"].split()[0].split("-")[:2]
+    submitted = proj.get('submitted') or proj.get('Submitted')
+    id = proj.get('id') or proj.get('ID')
+    y, m = submitted.split()[0].split("-")[:2]
     month = f"{int(m):02d}"
-    dst = CANON_ROOT / y / month / proj["ID"]
+    dst = CANON_ROOT / y / month / id
     dst.mkdir(parents=True, exist_ok=True)   # no‑op if exists
     return dst
 
@@ -47,6 +58,7 @@ def ensure_canonical(proj):
 def build_view_version(view_name, comps, projects, version_dir, log_path):
     error_log = version_dir / ERROR_LOG
     for proj in projects:
+        id = proj.get('id') or proj.get('ID')
         # compute each component; abort on missing data
         parts = []
         for fn in comps:
@@ -56,7 +68,7 @@ def build_view_version(view_name, comps, projects, version_dir, log_path):
                     raise ValueError
                 parts.append(val)
             except Exception:
-                log(f"Missing/invalid field for {proj['ID']} in view '{view_name}'", error_log)
+                log(f"Missing/invalid field for {id} in view '{view_name}'", error_log)
                 parts = None
                 break
         if not parts:
@@ -69,9 +81,83 @@ def build_view_version(view_name, comps, projects, version_dir, log_path):
         log(f"'{'/'.join(parts)}' -> '{rel_target}'", log_path)
 
 
+# ----- pruning -------------------------------------------------------------
+def _parse_date(name: str) -> datetime.date | None:
+    """Turn a folder name like 2024-03-15 into a date, or None if it doesn't match."""
+    try:
+        return datetime.datetime.strptime(name, DATE_FMT).date()
+    except Exception:
+        return None
+
+
+def prune_old_views():
+    """
+    Delete stale view versions while keeping a configurable number of
+    daily, weekly and monthly snapshots.
+    """
+    # --- retention settings (add to config.yaml if you want different defaults) ---
+    retain_cfg = cfg.get("retain", {})
+    keep_daily   = int(retain_cfg.get("daily",   7))
+    keep_weekly  = int(retain_cfg.get("weekly",  4))
+    keep_monthly = int(retain_cfg.get("monthly", 12))
+
+    # root that holds all view‑specific version trees
+    versions_root = VIEWS_ROOT / ".versions"
+    if not versions_root.is_dir():
+        return
+
+    for view_dir in versions_root.iterdir():          # each <view>
+        if not view_dir.is_dir():
+            continue
+
+        # collect dated sub‑folders (e.g. 2024-03-15)
+        dated_dirs = [
+            p for p in view_dir.iterdir()
+            if p.is_dir() and _parse_date(p.name) is not None
+        ]
+        # newest → oldest
+        dated_dirs.sort(key=lambda p: _parse_date(p.name), reverse=True)
+
+        keep: set[Path] = set()
+
+        # -------- daily --------
+        keep.update(dated_dirs[:keep_daily])
+
+        # -------- weekly --------
+        weeks_seen = set()
+        for p in dated_dirs:
+            d = _parse_date(p.name)
+            wk = (d.isocalendar()[0], d.isocalendar()[1])   # year, week
+            if len(weeks_seen) < keep_weekly and wk not in weeks_seen:
+                weeks_seen.add(wk)
+                keep.add(p)
+
+        # -------- monthly --------
+        months_seen = set()
+        for p in dated_dirs:
+            d = _parse_date(p.name)
+            mo = (d.year, d.month)
+            if len(months_seen) < keep_monthly and mo not in months_seen:
+                months_seen.add(mo)
+                keep.add(p)
+        # -------- delete everything else --------
+        for p in dated_dirs:
+            if p not in keep:
+                print(f'prune {p}')
+                shutil.rmtree(p)
+                # remove any stray symlinks that pointed to the deleted dir
+                for link in view_dir.iterdir():
+                    if link.is_symlink() and link.resolve() == p:
+                        link.unlink()
+
 # ----- main ----------------------------------------------------------------
-def main(csv_file: str):
-    projects = read_projects(Path(csv_file))
+def main(projects_file: str):
+    file_path = Path(projects_file)
+    if file_path.suffix == '.csv':
+        from views import VIEWS
+    elif file_path.suffix == '.json':
+        from json_views import VIEWS
+    projects = read_projects(file_path)
     today = datetime.date.today().strftime(DATE_FMT)
 
     for view, comps in VIEWS.items():
@@ -100,8 +186,10 @@ def main(csv_file: str):
 
         # summary
         print(f"[{view}] built version {today} – log: {log_path}")
+    
+    prune_old_views()
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        sys.exit("Usage: build_views.py <project_data.csv>")
+        sys.exit("Usage: build_views.py <project_data.csv/project_data.json>")
     main(sys.argv[1])
