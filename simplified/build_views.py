@@ -44,6 +44,13 @@ def read_projects(projects_path: Path):
             else:
                 return projects
 
+def _set_timestamp(path: str, timestamp: str, follow: bool = False) -> None:
+    """
+    Set the access and modification times of ``path`` to ``ts``.
+    """
+    ts = datetime.datetime.fromisoformat(timestamp).timestamp()
+    os.utime(path, (ts, ts), follow_symlinks=follow)
+
 # ----- build canonical layout ---------------------------------------------
 def ensure_canonical(proj):
     submitted = proj.get('submitted') or proj.get('Submitted')
@@ -51,7 +58,9 @@ def ensure_canonical(proj):
     y, m = submitted.split()[0].split("-")[:2]
     month = f"{int(m):02d}"
     dst = CANON_ROOT / y / month / id
-    dst.mkdir(parents=True, exist_ok=True)   # no‑op if exists
+    if not dst.exists():
+        dst.mkdir(parents=True, exist_ok=True)   # no‑op if exists
+        _set_timestamp(dst, submitted)
     return dst
 
 # ----- build a single view version ----------------------------------------
@@ -59,6 +68,7 @@ def build_view_version(view_name, comps, projects, version_dir, log_path):
     error_log = version_dir / ERROR_LOG
     for proj in projects:
         id = proj.get('id') or proj.get('ID')
+        submitted = proj.get('submitted') or proj.get('Submitted')
         # compute each component; abort on missing data
         parts = []
         for fn in comps:
@@ -78,6 +88,7 @@ def build_view_version(view_name, comps, projects, version_dir, log_path):
         leaf = version_dir.joinpath(*parts)
         leaf.parent.mkdir(parents=True, exist_ok=True)
         rel_target = rel_symlink(canon, leaf)
+        _set_timestamp(leaf, submitted)
         log(f"'{'/'.join(parts)}' -> '{rel_target}'", log_path)
 
 
