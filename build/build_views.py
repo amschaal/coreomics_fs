@@ -59,7 +59,12 @@ def ensure_canonical(proj):
     month = f"{int(m):02d}"
     dst = CANON_ROOT / y / month / id
     if not dst.exists():
-        dst.mkdir(parents=True, exist_ok=True)   # no‑op if exists
+        # dst.mkdir(parents=True, exist_ok=True)   # no‑op if exists
+        subdir = dst / '.submission'
+        subdir.mkdir(parents=True, exist_ok=True)
+        submission_json_path = subdir / 'submission.json'
+        with open(submission_json_path, 'w') as f:
+            json.dump(proj, f, indent=2)
         _set_timestamp(dst, submitted)
     return dst
 
