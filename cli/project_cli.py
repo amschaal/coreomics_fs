@@ -66,7 +66,9 @@ def cmd_url(args: argparse.Namespace, sub: Submission) -> None:
         else:
             subprocess.run(["xdg-open", url])
 
-
+def cmd_info(args: argparse.Namespace, sub: Submission) -> None:
+    info = sub.format_submission(section=args.subcommand)
+    print(info)
 # ---------------------------------------------------------------------- #
 # Argument parsing
 # ---------------------------------------------------------------------- #
@@ -92,6 +94,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="If 'open', launch the URL in the default web browser",
     )
     url_parser.set_defaults(func=cmd_url)
+
+    # `info` command
+    info_parser = subparsers.add_parser("info", help="Show the project info")
+    info_parser.add_argument(
+        "subcommand",
+        nargs="?",
+        choices=["pi","all"],
+        help="Show submission info, or qualify just pi, submitter, basic, or custom",
+    )
+    info_parser.set_defaults(func=cmd_info)
 
     return parser
 
