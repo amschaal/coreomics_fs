@@ -47,14 +47,20 @@ class Submission:
         """Return the project's URL (common key name)."""
         return self.get("url", "")
     
-    def download(self, format: str = "json", name: str = None):
+    def update(self):
+        """Update the .submission/submission.json file based on the latest from the server"""
+        submission = self.api.download(self.id, format="json")
+        with open(self.path, 'wb') as fp:
+            fp.write(submission)
+        return self.path
+
+    def download(self, format: str = "json", name: str = None) -> bytes:
         return self.api.download(self.id, format=format)
     
     def format_submission(self, section='all') -> str:
         """Return a human‑readable multi‑line string for a submission."""
         submission = self._data
         out = []
-
         # basic metadata
         out.append(f"ID: {submission.get('id')}")
         out.append(f"Internal ID: {submission.get('internal_id')}")
@@ -79,6 +85,7 @@ class Submission:
             out.append(f"Name : {submission.get('pi_first_name')} {submission.get('pi_last_name')}")
             out.append(f"Email: {submission.get('pi_email')}")
             out.append(f"Phone: {submission.get('pi_phone')}")
+        out.append(f"Institute: {submission.get('institute')}")
 
 
         # submission_data (show scalar values, count rows for tables)
