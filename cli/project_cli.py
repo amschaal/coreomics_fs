@@ -11,6 +11,7 @@ import argparse
 import os
 import subprocess
 import sys
+import json
 from pathlib import Path
 
 # Optional tab‑completion support (install with: pip install argcomplete)
@@ -69,6 +70,15 @@ def cmd_url(args: argparse.Namespace, sub: Submission) -> None:
 def cmd_info(args: argparse.Namespace, sub: Submission) -> None:
     info = sub.format_submission(section=args.subcommand)
     print(info)
+
+def cmd_download(args: argparse.Namespace, sub: Submission) -> None:
+    format = args.format
+    file = f'submission.{format}'
+    with open(file, 'wb') as wf:
+        wf.write(sub.download(format=format))
+    print(f'Submission downloaded as "{file}".')
+    # content = sub.download(format="tsv")
+    # print(content)
 # ---------------------------------------------------------------------- #
 # Argument parsing
 # ---------------------------------------------------------------------- #
@@ -104,6 +114,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Show submission info, or qualify just pi, submitter, basic, or custom",
     )
     info_parser.set_defaults(func=cmd_info)
+
+    # `download` command
+    info_parser = subparsers.add_parser("download", help="Download the submission as json, csv, tsv, or xlsx")
+    info_parser.add_argument(
+        "format",
+        nargs="?",
+        choices=["json","tsv","csv","xlsx"],
+        default="json",
+        help="Specify which format you want to download the submission as: json, csv, tsv, or xlsx",
+    )
+    info_parser.set_defaults(func=cmd_download)
 
     return parser
 

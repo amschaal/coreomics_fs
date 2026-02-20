@@ -6,6 +6,7 @@ Utility class for loading a project's submission.json.
 import json
 from pathlib import Path
 from typing import Any, Dict
+from api import SubmissionAPI, ApiClient
 
 
 class Submission:
@@ -15,6 +16,7 @@ class Submission:
         self.path: Path = json_path.resolve()
         self._data: Dict[str, Any] = {}
         self._load()
+        self.api = SubmissionAPI.create()
 
     # ------------------------------------------------------------------ #
     # Private helpers
@@ -32,6 +34,10 @@ class Submission:
         """Raw JSON dictionary."""
         return self._data
 
+    @property
+    def id(self) -> str:
+        return self._data.get('id')
+
     def get(self, key: str, default: Any = None) -> Any:
         """Convenient accessor for top‑level keys."""
         return self._data.get(key, default)
@@ -40,6 +46,9 @@ class Submission:
     def url(self) -> str:
         """Return the project's URL (common key name)."""
         return self.get("url", "")
+    
+    def download(self, format: str = "json", name: str = None):
+        return self.api.download(self.id, format=format)
     
     def format_submission(self, section='all') -> str:
         """Return a human‑readable multi‑line string for a submission."""

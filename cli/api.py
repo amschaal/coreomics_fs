@@ -19,8 +19,13 @@ def load_config(path: Optional[Path] = None) -> Dict[str, str]:
     Expected keys: `api_base_url`, `api_key`.
     """
     import yaml
+    
+    if path:
+        cfg_path = Path(path or "../config.yaml")
+    else:
+        BASE_DIR = Path(__file__).resolve().parent
+        cfg_path = BASE_DIR.parent / "config.yaml"
 
-    cfg_path = Path(path or "../config.yaml")
     if not cfg_path.is_file():
         raise FileNotFoundError(f"Config file not found: {cfg_path}")
 
@@ -54,7 +59,7 @@ class ApiClient:
             url = f"{url}?{query}"
         return url
 
-    def _request(self, method: str, path: str, params: Optional[Dict[str, Any]] = None, data: Optional[Any] = None, headers: Optional[Dict[str, str]] = None) -> Any:
+    def _request(self, method: str, path: str, params: Optional[Dict[str, Any]] = None, data: Optional[Any] = None, headers: Optional[Dict[str, str]] = None, raw: bool = False) -> Any:
         url = self._build_url(path, params)
         body = None
         hdrs = {"Authorization": f"Token {self.api_key}", "Accept": "application/json"}
@@ -67,22 +72,26 @@ class ApiClient:
 
         req = urllib.request.Request(url, data=body, headers=hdrs, method=method.upper())
         with urllib.request.urlopen(req) as resp:
-            raw = resp.read()
-            if not raw:
+            raw_resp = resp.read()
+            if not raw_resp:
                 return None
-            return json.loads(raw.decode("utf-8"))
+            if raw:
+                return raw_resp.decode("utf-8")
+            else:
+                return json.loads(raw_resp.decode("utf-8"))
+                
 
-    def get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
-        return self._request("GET", path, params=params)
+    def get(self, path: str, params: Optional[Dict[str, Any]] = None, raw: bool = False) -> Any:
+        return self._request("GET", path, params=params, raw=raw)
 
-    def post(self, path: str, data: Any = None, params: Optional[Dict[str, Any]] = None) -> Any:
-        return self._request("POST", path, params=params, data=data)
+    def post(self, path: str, data: Any = None, params: Optional[Dict[str, Any]] = None, raw: bool = False) -> Any:
+        return self._request("POST", path, params=params, data=data, raw=raw)
 
-    def put(self, path: str, data: Any = None, params: Optional[Dict[str, Any]] = None) -> Any:
-        return self._request("PUT", path, params=params, data=data)
+    def put(self, path: str, data: Any = None, params: Optional[Dict[str, Any]] = None, raw: bool = False) -> Any:
+        return self._request("PUT", path, params=params, data=data, raw=raw)
 
-    def delete(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
-        return self._request("DELETE", path, params=params)
+    def delete(self, path: str, params: Optional[Dict[str, Any]] = None, raw: bool = False) -> Any:
+        return self._request("DELETE", path, params=params, raw=raw)
 
 
 class SubmissionAPI:
@@ -91,16 +100,31 @@ class SubmissionAPI:
     These are thin wrappers around `ApiClient` to keep CLI code tidy and
     make adding new endpoints straightforward.
     """
+    @staticmethod
+    def create():
+        cfg = load_config()
+        api = ApiClient(cfg["api_base_url"], cfg["api_key"])
+        return SubmissionAPI(api)
 
     def __init__(self, client: ApiClient):
         self.client = client
 
-    def get_submission(self, submission_id: str) -> Dict[str, Any]:
-        return self.client.get(f"/server/api/submissions/{submission_id}/")
+    def get_submission(self, submission_id: str, raw: bool = False) -> Dict[str, Any] | str:
+        return self.client.get(f"/server/api/submissions/{submission_id}/", raw=raw)
 
     def list_submissions(self, query_params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         return self.client.get("/server/api/submissions/", params=query_params)
-
-
+    
+    def download(self, submission_id: str, format: str = 'tsv') -> bytes:
+        if format == 'json':
+            submission = self.get_submission(submission_id)
+            return json.dumps(submission, indent=2).encode('utf-8')
+        elif format == 'xlsx':
+            url = self.client._build_url(f"/server/api/submissions/{submission_id}/download/?format=xlsx&data=all")
+        else:
+            url = self.client._build_url(f"/server/api/submissions/{submission_id}/download/?format={format}&data=submission")
+        req = urllib.request.Request(url, headers={"Authorization": f"Token {self.client.api_key}"})
+        with urllib.request.urlopen(req) as resp:
+            return resp.read()
 __all__ = ["load_config", "ApiClient", "SubmissionAPI"]
 
