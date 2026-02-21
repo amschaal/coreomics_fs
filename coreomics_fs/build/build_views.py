@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 # build_views.py
-import csv, sys, os, shutil, datetime, json, yaml
+import csv, sys, os, shutil, datetime, json
 from pathlib import Path
 from views import safe_name
-
+from coreomics_fs.config import load_config
 # ----- load config ---------------------------------------------------------
-with open("config.yaml") as f:
-    cfg = yaml.safe_load(f)
+cfg = load_config()
 
-CANON_ROOT = Path(cfg["canonical_root"])
-VIEWS_ROOT = Path(cfg["views_root"])
-DATE_FMT   = cfg["date_format"]
-LOG_NAME   = cfg["log_name"]
-ERROR_LOG   = cfg["error_log"]
+CANON_ROOT = Path(cfg["paths"]["canonical_root"])
+VIEWS_ROOT = Path(cfg["paths"]["views_root"])
+DATE_FMT   = cfg["paths"]["date_format"]
+LOG_NAME   = cfg["paths"]["log_name"]
+ERROR_LOG   = cfg["paths"]["error_log"]
 
+print(DATE_FMT, cfg)
 # ----- utility ------------------------------------------------------------
 def log(msg, log_path, console=False):
     if console:
@@ -112,10 +112,10 @@ def prune_old_views():
     daily, weekly and monthly snapshots.
     """
     # --- retention settings (add to config.yaml if you want different defaults) ---
-    retain_cfg = cfg.get("retain", {})
-    keep_daily   = int(retain_cfg.get("daily",   7))
-    keep_weekly  = int(retain_cfg.get("weekly",  4))
-    keep_monthly = int(retain_cfg.get("monthly", 12))
+    retain_cfg = cfg["retain"]
+    keep_daily   = cfg.getint("retain", "daily") or 7
+    keep_weekly  = cfg.getint("retain", "weekly") or 4
+    keep_monthly = cfg.getint("retain", "monthly") or 12
 
     # root that holds all view‑specific version trees
     versions_root = VIEWS_ROOT / ".versions"

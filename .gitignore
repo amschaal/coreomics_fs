@@ -1,1 +1,9 @@
 */config.yaml
+*/config.ini
+*.json
+*/*.json
+*.csv
+*/*.csv
+*/chats
+chats
+*.pyc

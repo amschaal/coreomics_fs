@@ -11,31 +11,31 @@ import json
 import urllib.parse
 import urllib.request
 from typing import Any, Dict, Optional
+from coreomics_fs.config import load_config
 
+# def load_config(path: Optional[Path] = None) -> Dict[str, str]:
+#     """Load configuration from `config.yaml` in the repo root by default.
 
-def load_config(path: Optional[Path] = None) -> Dict[str, str]:
-    """Load configuration from `config.yaml` in the repo root by default.
-
-    Expected keys: `api_base_url`, `api_key`.
-    """
-    import yaml
+#     Expected keys: `api_base_url`, `api_key`.
+#     """
+#     import yaml
     
-    if path:
-        cfg_path = Path(path or "../config.yaml")
-    else:
-        BASE_DIR = Path(__file__).resolve().parent
-        cfg_path = BASE_DIR.parent / "config.yaml"
+#     if path:
+#         cfg_path = Path(path or "../config.yaml")
+#     else:
+#         BASE_DIR = Path(__file__).resolve().parent
+#         cfg_path = BASE_DIR.parent / "config.yaml"
 
-    if not cfg_path.is_file():
-        raise FileNotFoundError(f"Config file not found: {cfg_path}")
+#     if not cfg_path.is_file():
+#         raise FileNotFoundError(f"Config file not found: {cfg_path}")
 
-    with cfg_path.open("r", encoding="utf-8") as fh:
-        cfg = yaml.safe_load(fh) or {}
+#     with cfg_path.open("r", encoding="utf-8") as fh:
+#         cfg = yaml.safe_load(fh) or {}
 
-    if "api_base_url" not in cfg or "api_key" not in cfg:
-        raise KeyError("config.yaml must define 'api_base_url' and 'api_key'")
+#     if "api_base_url" not in cfg or "api_key" not in cfg:
+#         raise KeyError("config.yaml must define 'api_base_url' and 'api_key'")
 
-    return cfg
+#     return cfg
 
 
 class ApiClient:
@@ -103,7 +103,7 @@ class SubmissionAPI:
     @staticmethod
     def create():
         cfg = load_config()
-        api = ApiClient(cfg["api_base_url"], cfg["api_key"])
+        api = ApiClient(cfg["api"]["api_base_url"], cfg["api"]["api_key"])
         return SubmissionAPI(api)
 
     def __init__(self, client: ApiClient):

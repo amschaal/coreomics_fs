@@ -1,21 +1,17 @@
 import urllib.request
 import json
-import yaml
+import configparser
+import os
 from pathlib import Path
+from coreomics_fs.config import load_config
 
-# ----------------------------------------------------------------------
-# Load configuration
-# ----------------------------------------------------------------------
-CONFIG_PATH = Path("config.yaml")
-if not CONFIG_PATH.is_file():
-    raise FileNotFoundError(f"Config file not found: {CONFIG_PATH}")
+cfg = load_config()
 
-with CONFIG_PATH.open() as f:
-    cfg = yaml.safe_load(f)
-
-api_base_url = cfg["api_base_url"]
-api_key      = cfg["api_key"]
-
+db_dir      = cfg["paths"]["submissions_db_directory"]
+api_base_url = cfg["api"]["api_base_url"]
+api_key      = cfg["api"]["api_key"]
+PAGE_SIZE = 100
+LAB = "PROTEOMICS"
 # ----------------------------------------------------------------------
 # Helper to perform a GET request with the auth header
 # ----------------------------------------------------------------------
@@ -30,7 +26,7 @@ def get_json(url: str) -> dict:
 # Pagination loop – keep fetching until there is no `next` link
 # ----------------------------------------------------------------------
 all_results = []                     # will hold every submission object
-page_url = f"https://{api_base_url}/server/api/submissions/?page=1&page_size=100&lab=PROTEOMICS"
+page_url = f"https://{api_base_url}/server/api/submissions/?page=1&page_size={PAGE_SIZE}&lab={LAB}"
 
 while page_url:
     page_url = page_url.replace('http://','https://')
@@ -46,7 +42,7 @@ while page_url:
 # ----------------------------------------------------------------------
 # Write the aggregated list to a single JSON file
 # ----------------------------------------------------------------------
-OUTPUT_PATH = Path("all_submissions.json")
+OUTPUT_PATH = Path(db_dir) / "all_submissions.json"
 with OUTPUT_PATH.open("w", encoding="utf-8") as out_f:
     json.dump(all_results, out_f, indent=2, ensure_ascii=False)
 

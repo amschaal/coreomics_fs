@@ -1,0 +1,8 @@
+*config.yaml
+*config.ini
+*submissions.json
+*all_submissions.json
+*.csv
+*/*.csv
+*/chats
+chats
