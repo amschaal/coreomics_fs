@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Command‑line front‑end for the ``Submission`` helper.
+Command-line front-end for the ``Submission`` helper.
 
 Usage examples:
     $ project_cli.py url               # prints the URL
@@ -13,7 +13,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Optional tab‑completion support (install with: pip install argcomplete)
+# Optional tab-completion support (install with: pip install argcomplete)
 try:
     import argcomplete  # type: ignore
 except ImportError:  # pragma: no cover
@@ -58,7 +58,7 @@ def cmd_url(args: argparse.Namespace, sub: Submission) -> None:
     print(url)
 
     if args.subcommand == "open":
-        # Open in the default browser (cross‑platform)
+        # Open in the default browser (cross-platform)
         if sys.platform.startswith("darwin"):
             subprocess.run(["open", url])
         elif os.name == "nt":
@@ -87,7 +87,7 @@ def cmd_download(args: argparse.Namespace, sub: Submission) -> None:
 # ---------------------------------------------------------------------- #
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Project‑submission utility",
+        description="Project-submission utility",
         prog="project_cli.py",
     )
     parser.add_argument(

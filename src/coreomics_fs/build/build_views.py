@@ -59,7 +59,7 @@ def ensure_canonical(proj):
     month = f"{int(m):02d}"
     dst = CANON_ROOT / y / month / id
     if not dst.exists():
-        # dst.mkdir(parents=True, exist_ok=True)   # no‑op if exists
+        # dst.mkdir(parents=True, exist_ok=True)   # no-op if exists
         subdir = dst / '.submission'
         subdir.mkdir(parents=True, exist_ok=True)
         submission_json_path = subdir / 'submission.json'
@@ -117,7 +117,7 @@ def prune_old_views():
     keep_weekly  = cfg.getint("retain", "weekly") or 4
     keep_monthly = cfg.getint("retain", "monthly") or 12
 
-    # root that holds all view‑specific version trees
+    # root that holds all view-specific version trees
     versions_root = VIEWS_ROOT / ".versions"
     if not versions_root.is_dir():
         return
@@ -126,7 +126,7 @@ def prune_old_views():
         if not view_dir.is_dir():
             continue
 
-        # collect dated sub‑folders (e.g. 2024-03-15)
+        # collect dated sub-folders (e.g. 2024-03-15)
         dated_dirs = [
             p for p in view_dir.iterdir()
             if p.is_dir() and _parse_date(p.name) is not None
@@ -200,12 +200,12 @@ def main(projects_file: str=None):
         latest_link = VIEWS_ROOT / ".versions" / view / "latest"
         rel_symlink(final_dir, latest_link)
 
-        # top‑level view symlink
+        # top-level view symlink
         view_link = VIEWS_ROOT / view
         rel_symlink(final_dir, view_link)
 
         # summary
-        print(f"[{view}] built version {today} – log: {log_path}")
+        print(f"[{view}] built version {today} - log: {log_path}")
     
     prune_old_views()
 

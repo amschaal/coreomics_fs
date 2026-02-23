@@ -39,7 +39,7 @@ class Submission:
         return self._data.get('id')
 
     def get(self, key: str, default: Any = None) -> Any:
-        """Convenient accessor for top‑level keys."""
+        """Convenient accessor for top-level keys."""
         return self._data.get(key, default)
 
     # Example method used by the CLI
@@ -58,7 +58,7 @@ class Submission:
         return self.api.download(self.id, format=format)
     
     def format_submission(self, section='all') -> str:
-        """Return a human‑readable multi‑line string for a submission."""
+        """Return a human-readable multi-line string for a submission."""
         submission = self._data
         out = []
         # basic metadata
