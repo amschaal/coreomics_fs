@@ -6,7 +6,7 @@ Utility class for loading a project's submission.json.
 import json
 from pathlib import Path
 from typing import Any, Dict
-from api import SubmissionAPI, ApiClient
+from .api import SubmissionAPI
 
 
 class Submission:

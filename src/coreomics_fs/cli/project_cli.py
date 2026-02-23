@@ -20,7 +20,7 @@ except ImportError:  # pragma: no cover
     argcomplete = None
 
 # Local import – assumes submission.py lives next to this script
-from submission import Submission
+from .submission import Submission
 
 
 # ---------------------------------------------------------------------- #

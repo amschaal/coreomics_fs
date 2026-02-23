@@ -2,18 +2,18 @@
 # build_views.py
 import csv, sys, os, shutil, datetime, json
 from pathlib import Path
-from views import safe_name
-from coreomics_fs.config import load_config
+from .views import safe_name
+from ..config import load_config
 # ----- load config ---------------------------------------------------------
 cfg = load_config()
 
+DB_DIR      = cfg["paths"]["submissions_db_directory"]
 CANON_ROOT = Path(cfg["paths"]["canonical_root"])
 VIEWS_ROOT = Path(cfg["paths"]["views_root"])
 DATE_FMT   = cfg["paths"]["date_format"]
 LOG_NAME   = cfg["paths"]["log_name"]
 ERROR_LOG   = cfg["paths"]["error_log"]
 
-print(DATE_FMT, cfg)
 # ----- utility ------------------------------------------------------------
 def log(msg, log_path, console=False):
     if console:
@@ -167,12 +167,16 @@ def prune_old_views():
                         link.unlink()
 
 # ----- main ----------------------------------------------------------------
-def main(projects_file: str):
-    file_path = Path(projects_file)
+def main(projects_file: str=None):
+    if projects_file:
+        file_path = Path(projects_file)
+    else:
+        file_path = Path(DB_DIR) / 'all_submissions.json'
     if file_path.suffix == '.csv':
-        from views import VIEWS
+        from .views import VIEWS
     elif file_path.suffix == '.json':
-        from json_views import VIEWS
+        from .json_views import VIEWS
+
     projects = read_projects(file_path)
     today = datetime.date.today().strftime(DATE_FMT)
 
@@ -206,6 +210,10 @@ def main(projects_file: str):
     prune_old_views()
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
+    if len(sys.argv) == 1:
+        main()
+    elif len(sys.argv) == 2:
+        main(sys.argv[1])
+    else:
         sys.exit("Usage: build_views.py <project_data.csv/project_data.json>")
-    main(sys.argv[1])
+    

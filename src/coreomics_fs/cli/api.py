@@ -11,7 +11,7 @@ import json
 import urllib.parse
 import urllib.request
 from typing import Any, Dict, Optional
-from coreomics_fs.config import load_config
+from ..config import load_config
 
 # def load_config(path: Optional[Path] = None) -> Dict[str, str]:
 #     """Load configuration from `config.yaml` in the repo root by default.

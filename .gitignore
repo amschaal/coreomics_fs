@@ -1,5 +1,5 @@
-*/config.yaml
-*/config.ini
+*config.yaml
+*config.ini
 *.json
 */*.json
 *.csv
@@ -7,3 +7,5 @@
 */chats
 chats
 *.pyc
+*.xlsx
+*.tsv

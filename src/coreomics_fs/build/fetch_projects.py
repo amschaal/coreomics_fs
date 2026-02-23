@@ -3,7 +3,7 @@ import json
 import configparser
 import os
 from pathlib import Path
-from coreomics_fs.config import load_config
+from ..config import load_config
 
 cfg = load_config()
 
