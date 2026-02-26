@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # build_views.py
-import csv, sys, os, shutil, datetime, json
+import csv, sys, os, shutil, datetime, json, sqlite3
 from pathlib import Path
 from .views import safe_name
 from ..config import load_config
@@ -43,6 +43,36 @@ def read_projects(projects_path: Path):
                 return projects['results']
             else:
                 return projects
+    if projects_path.suffix in ('.db', '.sqlite'):
+        return load_from_db(projects_path)
+
+
+def load_from_db(path: Path):
+    conn = sqlite3.connect(str(path))
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM submissions")
+    rows = cur.fetchall()
+    results = []
+    for r in rows:
+        # prefer the stored JSON submission if present
+        submission = None
+        try:
+            if r['submission']:
+                submission = json.loads(r['submission'])
+        except Exception:
+            submission = None
+        if submission:
+            results.append(submission)
+        else:
+            # construct a minimal dict from columns
+            d = {k: r[k] for k in r.keys()}
+            # remove the submission text field to avoid nesting
+            d.pop('submission', None)
+            results.append(d)
+    conn.close()
+    print(f'{len(results)}  fetched from db')
+    return results
 
 def _set_timestamp(path: str, timestamp: str, follow: bool = False) -> None:
     """
@@ -171,12 +201,12 @@ def main(projects_file: str=None):
     if projects_file:
         file_path = Path(projects_file)
     else:
-        file_path = Path(DB_DIR) / 'all_submissions.json'
+        file_path = Path(DB_DIR) / 'submissions.db'
     if file_path.suffix == '.csv':
         from .views import VIEWS
-    elif file_path.suffix == '.json':
+    else:
         from .json_views import VIEWS
-
+    print(f'Building from file: {file_path}')
     projects = read_projects(file_path)
     today = datetime.date.today().strftime(DATE_FMT)
 
