@@ -6,6 +6,7 @@ import sqlite3
 import argparse
 from pathlib import Path
 from ..config import load_config
+from ..db.sqlite_submissions import SubmissionsDB
 
 
 def get_json(url: str, api_key: str) -> dict:
@@ -164,24 +165,23 @@ def main(argv=None):
     else:
         submissions = fetch_all_from_api(args.api_base, args.api_key, page_size=args.page_size, lab=args.lab)
 
-    conn = sqlite3.connect(str(db_path))
-    init_db(conn)
+    db = SubmissionsDB(db_path)
+    db.init_db()
 
     if args.init_db:
         print(f"Initialized DB at {db_path}")
-        conn.close()
+        db.close()
         return
 
     count = 0
     for sub in submissions:
         try:
-            upsert_submission(conn, sub)
+            db.upsert_submission(sub)
             count += 1
         except Exception as e:
             print(f"Failed to upsert submission id={sub.get('id')}: {e}")
 
-    conn.commit()
-    conn.close()
+    db.close()
     print(f"\nCompleted! {count} submissions saved/updated to {db_path}")
 
 

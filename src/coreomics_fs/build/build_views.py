@@ -47,30 +47,15 @@ def read_projects(projects_path: Path):
         return load_from_db(projects_path)
 
 
+from ..db.sqlite_submissions import SubmissionsDB
+
+
 def load_from_db(path: Path):
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM submissions")
-    rows = cur.fetchall()
-    results = []
-    for r in rows:
-        # prefer the stored JSON submission if present
-        submission = None
-        try:
-            if r['submission']:
-                submission = json.loads(r['submission'])
-        except Exception:
-            submission = None
-        if submission:
-            results.append(submission)
-        else:
-            # construct a minimal dict from columns
-            d = {k: r[k] for k in r.keys()}
-            # remove the submission text field to avoid nesting
-            d.pop('submission', None)
-            results.append(d)
-    conn.close()
+    db = SubmissionsDB(path)
+    try:
+        results = db.fetch_all_submissions()
+    finally:
+        db.close()
     print(f'{len(results)}  fetched from db')
     return results
 
