@@ -6,14 +6,15 @@ Utility class for loading a project's submission.json.
 import json
 from pathlib import Path
 from typing import Any, Dict
-from api import SubmissionAPI, ApiClient
-
+from .api import SubmissionAPI
+from ..db.sqlite_submissions import SubmissionsDB
 
 class Submission:
     """Load and expose the JSON payload of a project's submission."""
 
-    def __init__(self, json_path: Path):
+    def __init__(self, json_path: Path, submissions_db: SubmissionsDB = None):
         self.path: Path = json_path.resolve()
+        self.db = submissions_db
         self._data: Dict[str, Any] = {}
         self._load()
         self.api = SubmissionAPI.create()
@@ -39,7 +40,7 @@ class Submission:
         return self._data.get('id')
 
     def get(self, key: str, default: Any = None) -> Any:
-        """Convenient accessor for top‑level keys."""
+        """Convenient accessor for top-level keys."""
         return self._data.get(key, default)
 
     # Example method used by the CLI
@@ -49,16 +50,19 @@ class Submission:
     
     def update(self):
         """Update the .submission/submission.json file based on the latest from the server"""
-        submission = self.api.download(self.id, format="json")
+        submission = self.api.get_submission(self.id)
         with open(self.path, 'wb') as fp:
-            fp.write(submission)
+            fp.write(json.dumps(submission, indent=2).encode('utf-8'))
+        if self.db:
+            self.db.upsert_submission(submission)
+            print(f'Submission database {self.db.db_path} updated.')
         return self.path
 
     def download(self, format: str = "json", name: str = None) -> bytes:
         return self.api.download(self.id, format=format)
     
     def format_submission(self, section='all') -> str:
-        """Return a human‑readable multi‑line string for a submission."""
+        """Return a human-readable multi-line string for a submission."""
         submission = self._data
         out = []
         # basic metadata

@@ -4,17 +4,17 @@ from pathlib import Path
 
 # ---------- sanitisation helpers ----------
 def safe_name(s: str) -> str:
-    """Lower‑case, replace spaces with '_' and strip unsafe chars."""
+    """Lower-case, replace spaces with '_' and strip unsafe chars."""
     s = s.upper().replace(" ", "_")
     return re.sub(r"[^\w\-\.]", "", s)
 
 def get_year_month(submitted: str):
-    """Extract YYYY and zero‑padded MM from ISO‑like timestamp."""
+    """Extract YYYY and zero-padded MM from ISO-like timestamp."""
     dt = submitted.split()[0]               # e.g. 2025-12-16
     y, m, _ = dt.split("-")
     return y, f"{int(m):02d}"
 
-# ---------- view‑specific component functions ----------
+# ---------- view-specific component functions ----------
 def get_pi_last_initial(proj):
     return safe_name(proj.get("PI Last Name", "")[:1])
 
@@ -47,7 +47,7 @@ VIEWS = {
         get_pi_last_first,
         get_internal_id,
     ],
-    # Institute‑centric view with year/month grouping:
+    # Institute-centric view with year/month grouping:
     "institute": [
         get_institute_first,
         get_institute,

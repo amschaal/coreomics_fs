@@ -1,11 +1,10 @@
 *config.yaml
 *config.ini
-*.json
-*/*.json
+*submissions.json
+*all_submissions.json
 *.csv
 */*.csv
 */chats
 chats
-*.pyc
 *.xlsx
 *.tsv
