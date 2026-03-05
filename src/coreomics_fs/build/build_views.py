@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # build_views.py
+import argparse
 import csv, sys, os, shutil, datetime, json, sqlite3
 from pathlib import Path
 from .views import safe_name
@@ -182,11 +183,17 @@ def prune_old_views():
                         link.unlink()
 
 # ----- main ----------------------------------------------------------------
-def main(projects_file: str=None):
-    if projects_file:
-        file_path = Path(projects_file)
-    else:
-        file_path = Path(DB_DIR) / 'submissions.db'
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="Build filesystem views from submission data")
+    parser.add_argument(
+        "projects_file",
+        nargs="?",
+        help="Path to submissions file (.csv, .json, .db/.sqlite). Defaults to submissions.db from config.",
+    )
+    args = parser.parse_args(argv)
+
+    file_path = Path(args.projects_file) if args.projects_file else Path(DB_DIR) / 'submissions.db'
+
     if file_path.suffix == '.csv':
         from .views import VIEWS
     else:
@@ -221,14 +228,9 @@ def main(projects_file: str=None):
 
         # summary
         print(f"[{view}] built version {today} - log: {log_path}")
-    
+
     prune_old_views()
 
 if __name__ == "__main__":
-    if len(sys.argv) == 1:
-        main()
-    elif len(sys.argv) == 2:
-        main(sys.argv[1])
-    else:
-        sys.exit("Usage: build_views.py <project_data.csv/project_data.json>")
+    main()
     
