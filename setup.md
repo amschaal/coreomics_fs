@@ -5,7 +5,11 @@
 ```bash
 git clone https://github.com/amschaal/coreomics_fs.git ~/coreomics_fs
 cd ~/coreomics_fs
-pip install -e .
+
+pip install .
+# OR if installing only for user
+pip install --user .
+
 ```
 
 This installs three commands:
