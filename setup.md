@@ -31,11 +31,18 @@ eval "$(register-python-argcomplete coreomics-fetch)"
 
 ## Configuration
 
-Copy the example config and fill in your values:
+Copy the example config to the user config directory and fill in your values:
 
 ```bash
-cp ~/coreomics_fs/src/coreomics_fs/config.example.yaml ~/coreomics_fs/src/coreomics_fs/config.yaml
+mkdir -p ~/.config/coreomics
+cp ~/coreomics_fs/src/coreomics_fs/config.example.ini ~/.config/coreomics/config.ini
+# then edit ~/.config/coreomics/config.ini
 ```
+
+The config is loaded from the first location found:
+1. `$CONFIG_PATH` env var (if set)
+2. `~/.config/coreomics/config.ini` ← default for installed use
+3. `<package_dir>/config.ini` ← fallback for dev checkouts
 
 ## Shared/multi-user systems
 
