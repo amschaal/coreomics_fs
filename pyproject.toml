@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "coreomics-fs"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "argcomplete",
+]
+
+[project.scripts]
+coreomics = "coreomics_fs.cli.project_cli:main"
+coreomics-build = "coreomics_fs.build.build_views:main"
+coreomics-fetch = "coreomics_fs.build.fetch_projects:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
