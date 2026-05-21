@@ -12,7 +12,6 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from ..db.sqlite_submissions import SubmissionsDB
 
 # Optional tab-completion support (install with: pip install argcomplete)
 try:
@@ -77,6 +76,14 @@ def cmd_update(args: argparse.Namespace, sub: Submission) -> None:
     path = sub.update()
     print(f'Updated submission at {path.absolute()}')
 
+def cmd_readme(args: argparse.Namespace, sub: Submission) -> None:
+    if args.stdout:
+        print(sub.render_readme(max_table_rows=args.max_rows))
+        return
+    out_path = Path(args.output) if args.output else None
+    path = sub.write_readme(path=out_path, max_table_rows=args.max_rows)
+    print(f"README written to {path.absolute()}")
+
 def cmd_download(args: argparse.Namespace, sub: Submission) -> None:
     format = args.format
     file = f'submission.{format}'
@@ -128,6 +135,13 @@ def build_parser() -> argparse.ArgumentParser:
     # `update` command
     update_parser = subparsers.add_parser("update", help='Update the ".submission/submission.json" file for this project')
     update_parser.set_defaults(func=cmd_update)
+
+    # `readme` command
+    readme_parser = subparsers.add_parser("readme", help="Generate a README.md for this submission")
+    readme_parser.add_argument("-o", "--output", help="Path to write README to (default: <project>/README.md)")
+    readme_parser.add_argument("--stdout", action="store_true", help="Print to stdout instead of writing a file")
+    readme_parser.add_argument("--max-rows", type=int, default=10, help="Max rows per submission_data table (default: 10)")
+    readme_parser.set_defaults(func=cmd_readme)
 
     # `download` command
     info_parser = subparsers.add_parser("download", help="Download the submission as json, csv, tsv, or xlsx")

@@ -61,6 +61,20 @@ class Submission:
     def download(self, format: str = "json", name: str = None) -> bytes:
         return self.api.download(self.id, format=format)
     
+    def render_readme(self, max_table_rows: int = 10) -> str:
+        """Render a Markdown README summarizing this submission."""
+        from .readme import SubmissionReadme
+        return SubmissionReadme(self._data, max_table_rows=max_table_rows).render()
+
+    def write_readme(self, path: Path | None = None, max_table_rows: int = 10) -> Path:
+        """Write the rendered README to ``path`` (defaults to ``<project>/README.md``)."""
+        if path is None:
+            project_dir = self.path.parent.parent if self.path.parent.name == ".submission" else self.path.parent
+            path = project_dir / "README.md"
+        path = Path(path)
+        path.write_text(self.render_readme(max_table_rows=max_table_rows), encoding="utf-8")
+        return path
+
     def format_submission(self, section='all') -> str:
         """Return a human-readable multi-line string for a submission."""
         submission = self._data
