@@ -60,6 +60,25 @@ class Submission:
 
     def download(self, format: str = "json", name: str = None) -> bytes:
         return self.api.download(self.id, format=format)
+
+    def share(self, notes: str = "", path_prefix: tuple[str, str] | None = None) -> Dict[str, Any]:
+        """POST a submission_share for this project's canonical directory."""
+        project_dir = self.path.parent.parent if self.path.parent.name == ".submission" else self.path.parent
+        link_to_path = str(project_dir.resolve())
+        if path_prefix:
+            old, new = path_prefix
+            if link_to_path.startswith(old):
+                link_to_path = new + link_to_path[len(old):]
+
+        pi = self._data.get("pi") or {}
+        pi_last = pi.get("last_name") or self._data.get("pi_last_name") or ""
+        pi_first = pi.get("first_name") or self._data.get("pi_first_name") or ""
+        internal_id = self._data.get("internal_id", "")
+        name = f"{pi_last}, {pi_first}: {internal_id}"
+
+        return self.api.create_submission_share(
+            self.id, name=name, notes=notes, link_to_path=link_to_path,
+        )
     
     def render_readme(self, max_table_rows: int = 10) -> str:
         """Render a Markdown README summarizing this submission."""

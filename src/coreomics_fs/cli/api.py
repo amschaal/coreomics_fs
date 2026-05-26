@@ -71,14 +71,19 @@ class ApiClient:
             hdrs["Content-Type"] = "application/json"
 
         req = urllib.request.Request(url, data=body, headers=hdrs, method=method.upper())
-        with urllib.request.urlopen(req) as resp:
-            raw_resp = resp.read()
-            if not raw_resp:
-                return None
-            if raw:
-                return raw_resp.decode("utf-8")
-            else:
-                return json.loads(raw_resp.decode("utf-8"))
+        try:
+            with urllib.request.urlopen(req) as resp:
+                raw_resp = resp.read()
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode("utf-8", errors="replace")
+            raise urllib.error.HTTPError(
+                e.url, e.code, f"{e.reason}: {err_body}", e.headers, None,
+            ) from None
+        if not raw_resp:
+            return None
+        if raw:
+            return raw_resp.decode("utf-8")
+        return json.loads(raw_resp.decode("utf-8"))
                 
 
     def get(self, path: str, params: Optional[Dict[str, Any]] = None, raw: bool = False) -> Any:
@@ -115,6 +120,18 @@ class SubmissionAPI:
     def list_submissions(self, query_params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         return self.client.get("/server/api/submissions/", params=query_params)
     
+    def create_submission_share(self, submission_id: str, name: str, notes: str, link_to_path: str) -> Dict[str, Any]:
+        payload = {
+            "submission": submission_id,
+            "name": name,
+            "notes": notes,
+            "link_to_path": link_to_path,
+        }
+        return self.client.post(
+            f"/server/api/plugins/bioshare/submissions/{submission_id}/submission_shares/",
+            data=payload,
+        )
+
     def download(self, submission_id: str, format: str = 'tsv') -> bytes:
         if format == 'json':
             submission = self.get_submission(submission_id)

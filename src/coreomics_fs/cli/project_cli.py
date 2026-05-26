@@ -84,6 +84,30 @@ def cmd_readme(args: argparse.Namespace, sub: Submission) -> None:
     path = sub.write_readme(path=out_path, max_table_rows=args.max_rows)
     print(f"README written to {path.absolute()}")
 
+def cmd_share(args: argparse.Namespace, sub: Submission) -> None:
+    prefix = None
+    if args.path_prefix:
+        if "=" not in args.path_prefix:
+            sys.stderr.write("--path-prefix must be in the form OLD=NEW\n")
+            sys.exit(1)
+        old, new = args.path_prefix.split("=", 1)
+        prefix = (old, new)
+
+    resp = sub.share(notes=args.notes or "", path_prefix=prefix)
+
+    if not isinstance(resp, dict):
+        print(resp)
+        return
+
+    printed = False
+    for key in ("url", "name", "id", "bioshare_id", "link_to_path", "notes"):
+        if key in resp and resp[key] not in (None, ""):
+            print(f"{key}: {resp[key]}")
+            printed = True
+    if not printed:
+        import json as _json
+        print(_json.dumps(resp, indent=2))
+
 def cmd_download(args: argparse.Namespace, sub: Submission) -> None:
     format = args.format
     file = f'submission.{format}'
@@ -153,6 +177,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Specify which format you want to download the submission as: json, csv, tsv, or xlsx",
     )
     info_parser.set_defaults(func=cmd_download)
+
+    # `share` command
+    share_parser = subparsers.add_parser("share", help="Create a bioshare submission_share pointing at this project's canonical directory")
+    share_parser.add_argument("-n", "--notes", help="Notes to attach to the share (default: empty string)")
+    share_parser.add_argument(
+        "--path-prefix",
+        help="Remap the local canonical path before sending, in the form OLD=NEW (e.g. /data/coreomics=/mnt/share/coreomics)",
+    )
+    share_parser.set_defaults(func=cmd_share)
 
     return parser
 
