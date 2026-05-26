@@ -76,9 +76,9 @@ class ApiClient:
                 raw_resp = resp.read()
         except urllib.error.HTTPError as e:
             err_body = e.read().decode("utf-8", errors="replace")
-            raise urllib.error.HTTPError(
-                e.url, e.code, f"{e.reason}: {err_body}", e.headers, None,
-            ) from None
+            new_exc = urllib.error.HTTPError(e.url, e.code, e.reason, e.headers, None)
+            new_exc.body = err_body
+            raise new_exc from None
         if not raw_resp:
             return None
         if raw:

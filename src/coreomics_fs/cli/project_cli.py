@@ -8,9 +8,11 @@ Usage examples:
 """
 
 import argparse
+import json
 import os
 import subprocess
 import sys
+import urllib.error
 from pathlib import Path
 
 # Optional tab-completion support (install with: pip install argcomplete)
@@ -129,6 +131,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Directory at which to stop searching upward (default: filesystem root)",
     )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit errors as a single JSON object on stderr instead of a human-readable message",
+    )
 
     cfg = load_config()
     default_db_dir = cfg["paths"]["submissions_db_directory"]
@@ -215,7 +222,63 @@ def main() -> None:
     sub = Submission(submission_path, submissions_db=submissions_db)
 
     # Dispatch to the selected command
-    args.func(args, sub)
+    try:
+        args.func(args, sub)
+    except urllib.error.HTTPError as e:
+        _emit_error(e, as_json=args.json)
+        sys.exit(1)
+    except urllib.error.URLError as e:
+        _emit_error(e, as_json=args.json)
+        sys.exit(1)
+
+
+def _emit_error(exc: Exception, as_json: bool = False) -> None:
+    """Render an HTTP/URL error as a clean human message or a JSON object on stderr."""
+    if isinstance(exc, urllib.error.HTTPError):
+        body = getattr(exc, "body", "") or ""
+        parsed = None
+        if body:
+            try:
+                parsed = json.loads(body)
+            except (json.JSONDecodeError, ValueError):
+                parsed = None
+
+        if as_json:
+            payload = {
+                "error": True,
+                "status_code": exc.code,
+                "reason": str(exc.reason),
+                "url": exc.url,
+            }
+            if parsed is not None:
+                payload["detail"] = parsed
+            elif body:
+                payload["body"] = body
+            sys.stderr.write(json.dumps(payload) + "\n")
+            return
+
+        sys.stderr.write(f"Error: HTTP {exc.code} {exc.reason}\n")
+        if isinstance(parsed, dict):
+            for key, val in parsed.items():
+                if key in ("status_code", "authenticated"):
+                    continue
+                if isinstance(val, list):
+                    for item in val:
+                        sys.stderr.write(f"  {key}: {item}\n")
+                else:
+                    sys.stderr.write(f"  {key}: {val}\n")
+        elif parsed is not None:
+            sys.stderr.write(f"  {parsed}\n")
+        elif body:
+            sys.stderr.write(f"  {body}\n")
+        return
+
+    # URLError (connection refused, DNS failure, etc.)
+    reason = getattr(exc, "reason", str(exc))
+    if as_json:
+        sys.stderr.write(json.dumps({"error": True, "reason": str(reason)}) + "\n")
+    else:
+        sys.stderr.write(f"Error: {reason}\n")
 
 
 if __name__ == "__main__":
