@@ -95,7 +95,8 @@ def cmd_share(args: argparse.Namespace, sub: Submission) -> None:
         old, new = args.path_prefix.split("=", 1)
         prefix = (old, new)
 
-    resp = sub.share(notes=args.notes or "", path_prefix=prefix)
+    notes = sub.default_share_notes() if args.notes is None else args.notes
+    resp = sub.share(notes=notes, path_prefix=prefix)
 
     if not isinstance(resp, dict):
         print(resp)
@@ -187,7 +188,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     # `share` command
     share_parser = subparsers.add_parser("share", help="Create a bioshare submission_share pointing at this project's canonical directory")
-    share_parser.add_argument("-n", "--notes", help="Notes to attach to the share (default: empty string)")
+    share_parser.add_argument(
+        "-n", "--notes",
+        help="Notes to attach to the share (default: auto-generated from submission metadata; pass '' for empty)",
+    )
     share_parser.add_argument(
         "--path-prefix",
         help="Remap the local canonical path before sending, in the form OLD=NEW (e.g. /data/coreomics=/mnt/share/coreomics)",

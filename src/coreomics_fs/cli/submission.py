@@ -4,6 +4,7 @@ Utility class for loading a project's submission.json.
 """
 
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict
 from .api import SubmissionAPI
@@ -60,6 +61,27 @@ class Submission:
 
     def download(self, format: str = "json", name: str = None) -> bytes:
         return self.api.download(self.id, format=format)
+
+    def default_share_notes(self) -> str:
+        """Default note text auto-built from the submission record."""
+        d = self._data
+        pi = d.get("pi") or {}
+        pi_last = pi.get("last_name") or d.get("pi_last_name") or ""
+        pi_first = pi.get("first_name") or d.get("pi_first_name") or ""
+        submitted_raw = d.get("submitted") or ""
+        submitted = submitted_raw
+        if submitted_raw:
+            try:
+                dt = datetime.fromisoformat(submitted_raw.replace("Z", "+00:00"))
+                submitted = dt.strftime("%B %d, %Y")
+            except (ValueError, TypeError):
+                pass
+        return (
+            f"Created for submission: {d.get('internal_id', '')}, "
+            f"Submitter: {d.get('last_name', '')}, {d.get('first_name', '')}, "
+            f"PI: {pi_last}, {pi_first} "
+            f"submitted on {submitted}"
+        )
 
     def share(self, notes: str = "", path_prefix: tuple[str, str] | None = None) -> Dict[str, Any]:
         """POST a submission_share for this project's canonical directory."""
