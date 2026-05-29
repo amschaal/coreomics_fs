@@ -18,9 +18,13 @@ def get_json(url: str, api_key: str) -> dict:
 
 def fetch_all_from_api(api_base_url: str, api_key: str, page_size: int = 100, lab: str = "PROTEOMICS"):
     results = []
-    page_url = f"https://{api_base_url}/server/api/submissions/?page=1&page_size={page_size}&lab={lab}"
+    page_url = f"{api_base_url}/api/submissions/?page=1&page_size={page_size}&lab={lab}" 
+    http = 'http://' in page_url
+    if not http:
+        page_url = 'https://' + page_url
     while page_url:
-        page_url = page_url.replace('http://', 'https://')
+        if not http:
+            page_url = page_url.replace('http://', 'https://')
         print(f"Fetching: {page_url}")
         payload = get_json(page_url, api_key)
         page_results = payload.get("results", [])

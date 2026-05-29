@@ -44,7 +44,7 @@ class ApiClient:
     Example:
         cfg = load_config()
         api = ApiClient(cfg["api_base_url"], cfg["api_key"])
-        api.get("/server/api/submissions/", params={"page": 1})
+        api.get("/api/submissions/", params={"page": 1})
     """
 
     def __init__(self, base_url: str, api_key: str):
@@ -115,10 +115,10 @@ class SubmissionAPI:
         self.client = client
 
     def get_submission(self, submission_id: str, raw: bool = False) -> Dict[str, Any] | str:
-        return self.client.get(f"/server/api/submissions/{submission_id}/", raw=raw)
+        return self.client.get(f"/api/submissions/{submission_id}/", raw=raw)
 
     def list_submissions(self, query_params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        return self.client.get("/server/api/submissions/", params=query_params)
+        return self.client.get("/api/submissions/", params=query_params)
     
     def create_submission_share(self, submission_id: str, name: str, notes: str, link_to_path: str) -> Dict[str, Any]:
         payload = {
@@ -128,7 +128,7 @@ class SubmissionAPI:
             "link_to_path": link_to_path,
         }
         return self.client.post(
-            f"/server/api/plugins/bioshare/submissions/{submission_id}/submission_shares/",
+            f"/api/plugins/bioshare/submissions/{submission_id}/submission_shares/",
             data=payload,
         )
 
@@ -137,9 +137,9 @@ class SubmissionAPI:
             submission = self.get_submission(submission_id)
             return json.dumps(submission, indent=2).encode('utf-8')
         elif format == 'xlsx':
-            url = self.client._build_url(f"/server/api/submissions/{submission_id}/download/?format=xlsx&data=all")
+            url = self.client._build_url(f"/api/submissions/{submission_id}/download/?format=xlsx&data=all")
         else:
-            url = self.client._build_url(f"/server/api/submissions/{submission_id}/download/?format={format}&data=submission")
+            url = self.client._build_url(f"/api/submissions/{submission_id}/download/?format={format}&data=submission")
         req = urllib.request.Request(url, headers={"Authorization": f"Token {self.client.api_key}"})
         with urllib.request.urlopen(req) as resp:
             return resp.read()
