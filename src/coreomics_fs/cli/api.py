@@ -120,6 +120,20 @@ class SubmissionAPI:
     def list_submissions(self, query_params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         return self.client.get("/api/submissions/", params=query_params)
     
+    def list_submission_shares(self, submission_id: str) -> list:
+        """GET all shares for a submission, paginating through `results`."""
+        results: list = []
+        path = f"/api/plugins/bioshare/submissions/{submission_id}/submission_shares/"
+        while path:
+            resp = self.client.get(path)
+            results.extend(resp.get("results") or [])
+            next_url = resp.get("next")
+            if not next_url:
+                break
+            parsed = urllib.parse.urlparse(next_url)
+            path = parsed.path + (f"?{parsed.query}" if parsed.query else "")
+        return results
+
     def create_submission_share(self, submission_id: str, name: str, notes: str, link_to_path: str) -> Dict[str, Any]:
         payload = {
             "submission": submission_id,

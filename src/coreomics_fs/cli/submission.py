@@ -4,11 +4,27 @@ Utility class for loading a project's submission.json.
 """
 
 import json
+import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 from .api import SubmissionAPI
 from ..db.sqlite_submissions import SubmissionsDB
+
+class DuplicatePathError(Exception):
+    """A share already exists pointing at the same link_to_path."""
+    def __init__(self, existing_share: dict, path: str):
+        self.existing_share = existing_share
+        self.path = path
+        super().__init__(f"A share already points at {path}")
+
+
+class SharesExistError(Exception):
+    """Other shares exist for this submission. Caller may retry with force=True."""
+    def __init__(self, existing_shares: list):
+        self.existing_shares = existing_shares
+        super().__init__(f"{len(existing_shares)} share(s) already exist for this submission")
+
 
 class Submission:
     """Load and expose the JSON payload of a project's submission."""
@@ -57,6 +73,9 @@ class Submission:
         if self.db:
             self.db.upsert_submission(submission)
             print(f'Submission database {self.db.db_path} updated.')
+            shares = self.api.list_submission_shares(self.id)
+            upserted, deleted = self.db.sync_shares(self.id, shares)
+            print(f'Synced {upserted} share(s) ({deleted} deleted).')
         return self.path
 
     def download(self, format: str = "json", name: str = None) -> bytes:
@@ -83,8 +102,12 @@ class Submission:
             f"submitted on {submitted}"
         )
 
-    def share(self, notes: str = "", path_prefix: tuple[str, str] | None = None) -> Dict[str, Any]:
-        """POST a submission_share for this project's canonical directory."""
+    def share(self, notes: str = "", path_prefix: tuple[str, str] | None = None, force: bool = False) -> Dict[str, Any]:
+        """POST a submission_share for this project's canonical directory.
+
+        Raises DuplicatePathError if a share already points at the same link_to_path.
+        Raises SharesExistError if other shares exist and `force` is False.
+        """
         project_dir = self.path.parent.parent if self.path.parent.name == ".submission" else self.path.parent
         link_to_path = str(project_dir.resolve())
         if path_prefix:
@@ -92,16 +115,35 @@ class Submission:
             if link_to_path.startswith(old):
                 link_to_path = new + link_to_path[len(old):]
 
+        existing = self.api.list_submission_shares(self.id)
+        for s in existing:
+            if s.get("link_to_path") == link_to_path:
+                raise DuplicatePathError(s, link_to_path)
+        if existing and not force:
+            raise SharesExistError(existing)
+
         pi = self._data.get("pi") or {}
         pi_last = pi.get("last_name") or self._data.get("pi_last_name") or ""
         pi_first = pi.get("first_name") or self._data.get("pi_first_name") or ""
         internal_id = self._data.get("internal_id", "")
         name = f"{pi_last}, {pi_first}: {internal_id}"
 
-        return self.api.create_submission_share(
+        response = self.api.create_submission_share(
             self.id, name=name, notes=notes, link_to_path=link_to_path,
         )
-    
+        if self.db and isinstance(response, dict) and response.get("id"):
+            try:
+                self.db.upsert_share(response)
+            except Exception as e:
+                sys.stderr.write(f"Warning: share created but not persisted locally: {e}\n")
+        return response
+
+    def list_shares(self) -> List[Dict[str, Any]]:
+        """Return shares for this submission. Prefers the local DB; falls back to the API."""
+        if self.db:
+            return self.db.list_shares(self.id)
+        return self.api.list_submission_shares(self.id)
+
     def render_readme(self, max_table_rows: int = 10) -> str:
         """Render a Markdown README summarizing this submission."""
         from .readme import SubmissionReadme

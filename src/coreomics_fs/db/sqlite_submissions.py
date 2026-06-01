@@ -15,6 +15,7 @@ class SubmissionsDB:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(str(self.db_path))
         self.conn.row_factory = sqlite3.Row
+        self.init_db()
 
     def init_db(self):
         cur = self.conn.cursor()
@@ -39,6 +40,23 @@ class SubmissionsDB:
         ]
         for idx in indexes:
             cur.execute(f"CREATE INDEX IF NOT EXISTS idx_submissions_{idx} ON submissions ({idx})")
+
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS submission_shares (
+            id TEXT PRIMARY KEY,
+            submission_id TEXT NOT NULL,
+            bioshare_id TEXT,
+            name TEXT,
+            url TEXT,
+            notes TEXT,
+            sub_folder TEXT,
+            link_to_path TEXT,
+            share JSON
+        )
+        """)
+        for idx in ("submission_id", "bioshare_id"):
+            cur.execute(f"CREATE INDEX IF NOT EXISTS idx_submission_shares_{idx} ON submission_shares ({idx})")
+
         self.conn.commit()
 
     def upsert_submission(self, sub_obj: dict):
@@ -134,6 +152,81 @@ class SubmissionsDB:
                 d.pop('submission', None)
                 results.append(d)
         return results
+
+    def upsert_share(self, share_obj: dict):
+        share_json = json.dumps(share_obj, ensure_ascii=False)
+        cur = self.conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO submission_shares (
+                id, submission_id, bioshare_id, name, url, notes,
+                sub_folder, link_to_path, share
+            ) VALUES (?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(id) DO UPDATE SET
+              submission_id=excluded.submission_id,
+              bioshare_id=excluded.bioshare_id,
+              name=excluded.name,
+              url=excluded.url,
+              notes=excluded.notes,
+              sub_folder=excluded.sub_folder,
+              link_to_path=excluded.link_to_path,
+              share=excluded.share
+            """,
+            (
+                share_obj.get("id"),
+                share_obj.get("submission"),
+                share_obj.get("bioshare_id"),
+                share_obj.get("name"),
+                share_obj.get("url"),
+                share_obj.get("notes"),
+                share_obj.get("sub_folder"),
+                share_obj.get("link_to_path"),
+                share_json,
+            ),
+        )
+        self.conn.commit()
+
+    def list_shares(self, submission_id: str) -> list[dict]:
+        cur = self.conn.cursor()
+        cur.execute("SELECT * FROM submission_shares WHERE submission_id = ?", (submission_id,))
+        results = []
+        for r in cur.fetchall():
+            share = None
+            try:
+                if r["share"]:
+                    share = json.loads(r["share"])
+            except Exception:
+                share = None
+            if share:
+                results.append(share)
+            else:
+                d = {k: r[k] for k in r.keys()}
+                d.pop("share", None)
+                results.append(d)
+        return results
+
+    def sync_shares(self, submission_id: str, share_objs: list[dict]) -> tuple[int, int]:
+        """Upsert each share in `share_objs`, then delete local rows for this
+        submission whose id isn't in the supplied list. Returns (upserted, deleted)."""
+        kept_ids = [s["id"] for s in share_objs if s.get("id")]
+        for s in share_objs:
+            if s.get("id"):
+                self.upsert_share(s)
+        cur = self.conn.cursor()
+        if kept_ids:
+            placeholders = ",".join("?" for _ in kept_ids)
+            cur.execute(
+                f"DELETE FROM submission_shares WHERE submission_id = ? AND id NOT IN ({placeholders})",
+                (submission_id, *kept_ids),
+            )
+        else:
+            cur.execute(
+                "DELETE FROM submission_shares WHERE submission_id = ?",
+                (submission_id,),
+            )
+        deleted = cur.rowcount or 0
+        self.conn.commit()
+        return len(kept_ids), deleted
 
     def close(self):
         try:

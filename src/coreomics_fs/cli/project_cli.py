@@ -22,7 +22,7 @@ except ImportError:  # pragma: no cover
     argcomplete = None
 
 # Local import – assumes submission.py lives next to this script
-from .submission import Submission
+from .submission import Submission, DuplicatePathError, SharesExistError
 
 from ..config import load_config
 from ..db.sqlite_submissions import SubmissionsDB
@@ -96,7 +96,38 @@ def cmd_share(args: argparse.Namespace, sub: Submission) -> None:
         prefix = (old, new)
 
     notes = sub.default_share_notes() if args.notes is None else args.notes
-    resp = sub.share(notes=notes, path_prefix=prefix)
+
+    try:
+        resp = sub.share(notes=notes, path_prefix=prefix, force=args.yes)
+    except DuplicatePathError as e:
+        sys.stderr.write(f"Error: a share already points at {e.path}:\n")
+        for key in ("url", "name", "id", "bioshare_id"):
+            val = e.existing_share.get(key)
+            if val:
+                sys.stderr.write(f"  {key}: {val}\n")
+        sys.exit(1)
+    except SharesExistError as e:
+        if args.json or not sys.stdin.isatty():
+            sys.stderr.write(
+                f"Error: {len(e.existing_shares)} share(s) already exist for this submission. "
+                f"Re-run with -y/--yes to create another.\n"
+            )
+            sys.exit(1)
+        sys.stderr.write(f"Warning: {len(e.existing_shares)} share(s) already exist for this submission:\n")
+        for s in e.existing_shares:
+            label = s.get("url") or s.get("id") or "?"
+            name = s.get("name", "")
+            sys.stderr.write(f"  - {name} ({label})\n")
+        sys.stderr.write("Create another? [y/N] ")
+        sys.stderr.flush()
+        try:
+            ans = input().strip().lower()
+        except EOFError:
+            ans = ""
+        if ans not in ("y", "yes"):
+            sys.stderr.write("Aborted.\n")
+            sys.exit(1)
+        resp = sub.share(notes=notes, path_prefix=prefix, force=True)
 
     if not isinstance(resp, dict):
         print(resp)
@@ -110,6 +141,24 @@ def cmd_share(args: argparse.Namespace, sub: Submission) -> None:
     if not printed:
         import json as _json
         print(_json.dumps(resp, indent=2))
+
+def cmd_shares(args: argparse.Namespace, sub: Submission) -> None:
+    shares = sub.list_shares()
+
+    if args.json:
+        print(json.dumps({"shares": shares}, indent=2))
+        return
+
+    if not shares:
+        print("No shares for this project.")
+        return
+
+    for i, share in enumerate(shares):
+        if i:
+            print()
+        for key in ("url", "name", "id", "bioshare_id", "link_to_path", "notes"):
+            if key in share and share[key] not in (None, ""):
+                print(f"{key}: {share[key]}")
 
 def cmd_download(args: argparse.Namespace, sub: Submission) -> None:
     format = args.format
@@ -196,7 +245,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--path-prefix",
         help="Remap the local canonical path before sending, in the form OLD=NEW (e.g. /data/coreomics=/mnt/share/coreomics)",
     )
+    share_parser.add_argument(
+        "-y", "--yes",
+        action="store_true",
+        help="Skip the confirmation prompt when other shares already exist for this submission",
+    )
     share_parser.set_defaults(func=cmd_share)
+
+    # `shares` command
+    shares_parser = subparsers.add_parser("shares", help="List bioshare submission_shares for this project (from the local DB; falls back to API if no DB)")
+    shares_parser.set_defaults(func=cmd_shares)
 
     return parser
 
