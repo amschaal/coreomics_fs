@@ -1,7 +1,7 @@
 *config.yaml
 *config.ini
-*.json
-*/*.json
+./*.json
+*submission*.json*
 *.csv
 */*.csv
 */chats
@@ -9,3 +9,4 @@ chats
 *.pyc
 *.xlsx
 *.tsv
+docker-compose.override.yml

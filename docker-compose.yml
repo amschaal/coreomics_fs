@@ -8,5 +8,12 @@ services:
     volumes:
       - .:/app
     # Keep the container alive with an interactive terminal.
-    stdin_open: true   # equivalent to -i
-    tty: true          # equivalent to -t
+    stdin_open: true # equivalent to -i
+    tty: true # equivalent to -t
+    networks:
+      - shared-network
+    ports:
+      - "443"
+networks:
+  shared-network: #for communicating with other docker application APIs used by plugins.  First run: docker network create shared-network
+    external: true
