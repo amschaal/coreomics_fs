@@ -47,6 +47,12 @@ def get_month(proj):
     _, m = get_year_month(proj["submitted"])
     return m
 
+def get_id_shard(proj):
+    return proj.get("id")[:2]
+
+def get_id(proj):
+    return proj.get("id")
+
 # ---------- view definitions ----------
 # Each entry maps a view name → list of callables that produce the path parts.
 VIEWS = {
@@ -69,5 +75,9 @@ VIEWS = {
         get_year,
         get_month,
         get_internal_id,
+    ],
+    "submission_id": [
+        get_id_shard,
+        get_id
     ],
 }
