@@ -201,4 +201,21 @@ class Submission:
             else:
                 out.append(f"{key}: {val}")
 
+        # shares (URLs only — for detail run `coreomics shares`)
+        out.append("\n--- Shares ---")
+        try:
+            shares = self.list_shares()
+        except Exception as e:
+            shares = None
+            shares_err = str(e)
+        if shares is None:
+            out.append(f"(unavailable: {shares_err})")
+        elif not shares:
+            out.append("(none)")
+        else:
+            for s in shares:
+                url = s.get("url")
+                if url:
+                    out.append(url)
+
         return "\n".join(out)
