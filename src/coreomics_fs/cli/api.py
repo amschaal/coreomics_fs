@@ -134,6 +134,24 @@ class SubmissionAPI:
             path = parsed.path + (f"?{parsed.query}" if parsed.query else "")
         return results
 
+    def list_all_shares(self, lab_id: str) -> list:
+        """GET all shares across submissions for a lab, paginating through `results`."""
+        if not lab_id:
+            raise ValueError("lab_id is required")
+        results: list = []
+        path = "/api/plugins/bioshare/shares/"
+        params: Optional[Dict[str, Any]] = {"lab_id": lab_id}
+        while path:
+            resp = self.client.get(path, params=params)
+            results.extend(resp.get("results") or [])
+            next_url = resp.get("next")
+            if not next_url:
+                break
+            parsed = urllib.parse.urlparse(next_url)
+            path = parsed.path + (f"?{parsed.query}" if parsed.query else "")
+            params = None  # next URL already includes the query string
+        return results
+
     def create_submission_share(self, submission_id: str, name: str, notes: str, link_to_path: str) -> Dict[str, Any]:
         payload = {
             "submission": submission_id,

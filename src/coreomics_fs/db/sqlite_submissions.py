@@ -228,6 +228,26 @@ class SubmissionsDB:
         self.conn.commit()
         return len(kept_ids), deleted
 
+    def sync_all_shares(self, share_objs: list[dict]) -> tuple[int, int]:
+        """Global hard-sync: upsert every supplied share and delete every local
+        share whose id isn't in the supplied list. Returns (upserted, deleted)."""
+        kept_ids = [s["id"] for s in share_objs if s.get("id")]
+        for s in share_objs:
+            if s.get("id"):
+                self.upsert_share(s)
+        cur = self.conn.cursor()
+        if kept_ids:
+            placeholders = ",".join("?" for _ in kept_ids)
+            cur.execute(
+                f"DELETE FROM submission_shares WHERE id NOT IN ({placeholders})",
+                kept_ids,
+            )
+        else:
+            cur.execute("DELETE FROM submission_shares")
+        deleted = cur.rowcount or 0
+        self.conn.commit()
+        return len(kept_ids), deleted
+
     def close(self):
         try:
             self.conn.close()

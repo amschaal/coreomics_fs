@@ -7,6 +7,7 @@ import argparse
 from pathlib import Path
 from ..config import load_config
 from ..db.sqlite_submissions import SubmissionsDB
+from ..cli.api import ApiClient, SubmissionAPI
 
 
 def get_json(url: str, api_key: str) -> dict:
@@ -150,15 +151,17 @@ def main(argv=None):
     default_db_dir = cfg["paths"]["submissions_db_directory"]
     default_api_base = cfg["api"]["api_base_url"]
     default_api_key = cfg["api"]["api_key"]
+    default_lab_id = cfg["api"]["lab_id"]
 
     parser = argparse.ArgumentParser(description="Fetch submissions and store into sqlite DB")
     parser.add_argument("--input-file", "-i", help="Path to JSON file with submissions (array or {results: []})")
     parser.add_argument("--db-path", "-d", help="Path to sqlite DB file (overrides config)", default=str(Path(default_db_dir) / "submissions.db"))
     parser.add_argument("--init-db", action="store_true", help="Initialize the DB and exit")
     parser.add_argument("--page-size", type=int, default=100)
-    parser.add_argument("--lab", default="PROTEOMICS")
+    parser.add_argument("--lab", default=default_lab_id, help="Lab id used for both the submissions filter and the bioshare shares fetch (defaults to [api] lab_id in config)")
     parser.add_argument("--api-base", default=default_api_base)
     parser.add_argument("--api-key", default=default_api_key)
+    parser.add_argument("--no-shares", action="store_true", help="Skip the bioshare shares fetch and DB sync (useful for offline/testing runs)")
     args = parser.parse_args(argv)
 
     db_path = Path(args.db_path)
@@ -184,6 +187,14 @@ def main(argv=None):
             count += 1
         except Exception as e:
             print(f"Failed to upsert submission id={sub.get('id')}: {e}")
+
+    if args.no_shares:
+        print("Skipping bioshare shares sync (--no-shares).")
+    else:
+        api = SubmissionAPI(ApiClient(args.api_base, args.api_key))
+        shares = api.list_all_shares(args.lab)
+        upserted, deleted = db.sync_all_shares(shares)
+        print(f"Synced {upserted} share(s) ({deleted} deleted) for lab {args.lab}.")
 
     db.close()
     print(f"\nCompleted! {count} submissions saved/updated to {db_path}")
