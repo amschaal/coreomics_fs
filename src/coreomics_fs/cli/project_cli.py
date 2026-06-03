@@ -77,6 +77,9 @@ def cmd_info(args: argparse.Namespace, sub: Submission) -> None:
 def cmd_update(args: argparse.Namespace, sub: Submission) -> None:
     path = sub.update()
     print(f'Updated submission at {path.absolute()}')
+    readme_path = sub.ensure_readme()
+    if readme_path:
+        print(f'Refreshed README at {readme_path.absolute()}')
 
 def cmd_readme(args: argparse.Namespace, sub: Submission) -> None:
     if args.stdout:

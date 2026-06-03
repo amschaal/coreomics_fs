@@ -70,6 +70,7 @@ class Submission:
         submission = self.api.get_submission(self.id)
         with open(self.path, 'wb') as fp:
             fp.write(json.dumps(submission, indent=2).encode('utf-8'))
+        self._data = submission  # reflect the freshly-fetched record
         if self.db:
             self.db.upsert_submission(submission)
             print(f'Submission database {self.db.db_path} updated.')
@@ -157,6 +158,13 @@ class Submission:
         path = Path(path)
         path.write_text(self.render_readme(max_table_rows=max_table_rows), encoding="utf-8")
         return path
+
+    def ensure_readme(self, max_table_rows: int = 10, force: bool = False) -> Path | None:
+        """(Re)write this project's README.md if missing or stale. Returns the
+        path written, or None if it was already current."""
+        from .readme import ensure_readme
+        project_dir = self.path.parent.parent if self.path.parent.name == ".submission" else self.path.parent
+        return ensure_readme(project_dir, self._data, max_table_rows=max_table_rows, force=force)
 
     def format_submission(self, section='all') -> str:
         """Return a human-readable multi-line string for a submission."""

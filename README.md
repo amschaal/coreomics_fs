@@ -133,6 +133,33 @@ Other useful flags: `--input-file/-i` (load from a local JSON file instead of th
 
 ---
 
+## Building the tree and views
+
+`coreomics-build` projects the SQLite records onto disk: the canonical
+`year/month/<id>` tree and the symlink views.
+
+```bash
+coreomics-build                 # build from submissions.db (config default)
+coreomics-build --updated-days 7   # only refresh projects updated in the last 7 days
+coreomics-build --no-readme     # skip README.md generation (submission.json still refreshed)
+```
+
+As part of each build, every project's files are kept current:
+
+- **`.submission/submission.json`** is rewritten whenever the database record's `updated`
+  timestamp is newer than the on-disk copy (previously it was only written when the project
+  directory was first created, so edits to an existing submission went unreflected).
+- **`README.md`** (rendered by the same template as `coreomics readme`) is created when
+  missing, and regenerated when older than the submission's `updated` time. Its mtime is set
+  to `updated`, so repeat builds don't rewrite unchanged projects.
+
+`--updated-days N` limits this refresh pass to submissions updated in the last N days — pair
+it with `coreomics-fetch --updated-days N` for fast incremental syncs. With no flag, all
+projects are checked (the per-project check is cheap). The per-project `coreomics update`
+command performs the same refresh for the current project after re-fetching it.
+
+---
+
 ## Tab completion (optional)
 
 Add to `~/.bashrc` or `~/.zshrc`:

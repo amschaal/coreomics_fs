@@ -67,6 +67,37 @@ def _set_timestamp(path: str, timestamp: str, follow: bool = False) -> None:
     ts = datetime.datetime.fromisoformat(timestamp).timestamp()
     os.utime(path, (ts, ts), follow_symlinks=follow)
 
+
+def _updated_ts(proj):
+    """Epoch seconds for a project's ``updated`` field, or None if unusable."""
+    from ..cli.readme import _parse_ts
+    return _parse_ts(proj.get('updated') or proj.get('date_updated'))
+
+
+def refresh_submission_json(project_dir, proj) -> bool:
+    """Rewrite ``<project_dir>/.submission/submission.json`` if the on-disk copy
+    is missing or older (by ``updated``) than ``proj``. Returns True if written.
+
+    Staleness is content-based (compares the ``updated`` field), so it stays
+    correct regardless of filesystem mtimes. The directory mtime is left alone
+    — it intentionally tracks ``submitted`` (see ``_set_timestamp``)."""
+    sj_path = Path(project_dir) / '.submission' / 'submission.json'
+    new_ts = _updated_ts(proj)
+    if sj_path.exists():
+        try:
+            with open(sj_path) as f:
+                on_disk = json.load(f)
+            old_ts = _updated_ts(on_disk)
+        except Exception:
+            old_ts = None
+        # Skip only when we can prove the on-disk copy is at least as new.
+        if old_ts is not None and new_ts is not None and old_ts >= new_ts:
+            return False
+    sj_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(sj_path, 'w') as f:
+        json.dump(proj, f, indent=2)
+    return True
+
 # ----- build canonical layout ---------------------------------------------
 def ensure_canonical(proj):
     submitted = proj.get('submitted') or proj.get('Submitted')
@@ -190,17 +221,46 @@ def main(argv=None):
         nargs="?",
         help="Path to submissions file (.csv, .json, .db/.sqlite). Defaults to submissions.db from config.",
     )
+    parser.add_argument("--no-readme", action="store_true", help="Skip per-project README.md generation (submission.json is still refreshed).")
+    parser.add_argument("--updated-days", type=int, metavar="N", help="Only refresh projects whose submission was updated in the last N days (default: all).")
     args = parser.parse_args(argv)
 
     file_path = Path(args.projects_file) if args.projects_file else Path(DB_DIR) / 'submissions.db'
 
-    if file_path.suffix == '.csv':
+    is_csv = file_path.suffix == '.csv'
+    if is_csv:
         from .views import VIEWS
     else:
         from .json_views import VIEWS
     print(f'Building from file: {file_path}')
     projects = read_projects(file_path)
     today = datetime.date.today().strftime(DATE_FMT)
+
+    # Refresh per-project .submission/submission.json (when the record's `updated`
+    # has advanced) and (re)generate README.md when missing/stale. README rendering
+    # expects JSON-style keys, so this pass is skipped for CSV input.
+    if not is_csv:
+        from ..cli.readme import ensure_readme
+        cutoff_ts = None
+        if args.updated_days is not None:
+            if args.updated_days < 0:
+                parser.error("--updated-days must be zero or a positive integer")
+            cutoff_ts = (datetime.datetime.now() - datetime.timedelta(days=args.updated_days)).timestamp()
+        refreshed = readmes = 0
+        for proj in projects:
+            try:
+                if cutoff_ts is not None:
+                    pts = _updated_ts(proj)
+                    if pts is not None and pts < cutoff_ts:
+                        continue
+                dst = ensure_canonical(proj)
+                if refresh_submission_json(dst, proj):
+                    refreshed += 1
+                if not args.no_readme and ensure_readme(dst, proj):
+                    readmes += 1
+            except Exception as e:
+                print(f"Refresh skipped for id={proj.get('id') or proj.get('ID')}: {e}")
+        print(f"Refreshed {refreshed} submission.json, wrote {readmes} README.md")
 
     for view, comps in VIEWS.items():
         # temporary staging area

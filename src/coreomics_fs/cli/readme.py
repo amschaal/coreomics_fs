@@ -4,8 +4,10 @@ Lives outside ``Submission`` so the model class stays focused on loading,
 updating, and accessing submission data.
 """
 
+import os
 import re
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 # Strip personally identifiable contact info before it reaches the README.
@@ -239,3 +241,45 @@ class SubmissionReadme:
         s = cls._redact(str(text))
         s = s.replace("\r\n", "\n").replace("\r", "\n")
         return s.replace("|", "\\|").replace("\n", "<br>")
+
+
+def _parse_ts(value: Any) -> float | None:
+    """Parse an ISO-8601 timestamp to an epoch float, or None if unusable.
+
+    Handles a trailing ``Z`` and tz-aware/naive inputs uniformly via
+    ``.timestamp()``. Returns None for missing or unparseable values.
+    """
+    if value in (None, ""):
+        return None
+    try:
+        return datetime.fromisoformat(str(value).strip().replace("Z", "+00:00")).timestamp()
+    except (ValueError, TypeError):
+        return None
+
+
+def ensure_readme(project_dir, submission: dict, *, max_table_rows: int = 10,
+                  force: bool = False) -> Path | None:
+    """Write ``<project_dir>/README.md`` if missing or stale; else do nothing.
+
+    Staleness is decided by the submission's ``updated`` timestamp: the README
+    is (re)written iff it is missing, ``force`` is set, ``updated`` is unknown,
+    or the file's mtime is older than ``updated``. On write the README's mtime
+    is set to ``updated`` (when known) so repeat runs are idempotent. Returns
+    the path written, or None if nothing was done.
+    """
+    readme_path = Path(project_dir) / "README.md"
+    updated_ts = _parse_ts(submission.get("updated") or submission.get("date_updated"))
+    # Compare/store at whole-second granularity: network shares (NFS/SMB) often
+    # floor mtimes to the second, so a sub-second `updated` would otherwise read
+    # back as "older" and force a rewrite on every build.
+    updated_sec = int(updated_ts) if updated_ts is not None else None
+
+    if not force and updated_sec is not None and readme_path.exists():
+        if int(readme_path.stat().st_mtime) >= updated_sec:
+            return None  # already current
+
+    content = SubmissionReadme(submission, max_table_rows=max_table_rows).render()
+    readme_path.write_text(content, encoding="utf-8")
+    if updated_sec is not None:
+        os.utime(readme_path, (updated_sec, updated_sec))
+    return readme_path
