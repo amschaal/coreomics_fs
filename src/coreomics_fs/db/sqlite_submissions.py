@@ -153,6 +153,64 @@ class SubmissionsDB:
                 results.append(d)
         return results
 
+    # Logical fields that can be searched with -f/--field.
+    SEARCH_FIELDS = (
+        "id", "internal_id",
+        "first_name", "last_name", "email",
+        "pi_first_name", "pi_last_name", "pi_email",
+    )
+
+    @staticmethod
+    def _field_values(sub: dict, field: str):
+        """Candidate strings for ``field``, read from the *full* record.
+
+        The flat scalar columns (e.g. ``pi_last_name``) can diverge from the
+        nested ``pi``/``submitter`` structures that callers actually display
+        (real data has cases where the scalar PI name differs entirely from
+        ``pi['name']``). Pulling from both keeps search results consistent with
+        what the user sees, so any visible name is findable.
+        """
+        pi = sub.get("pi") if isinstance(sub.get("pi"), dict) else {}
+        submitter = sub.get("submitter") if isinstance(sub.get("submitter"), dict) else {}
+        participant = sub.get("participant") if isinstance(sub.get("participant"), dict) else {}
+        candidates = {
+            "id": [sub.get("id")],
+            "internal_id": [sub.get("internal_id"), sub.get("id")],
+            "first_name": [sub.get("first_name"), submitter.get("first_name"), participant.get("first_name")],
+            "last_name": [sub.get("last_name"), submitter.get("last_name"), participant.get("last_name")],
+            "email": [sub.get("email"), submitter.get("email"), participant.get("email")],
+            "pi_first_name": [sub.get("pi_first_name"), pi.get("first_name")],
+            "pi_last_name": [sub.get("pi_last_name"), pi.get("last_name"), pi.get("name")],
+            "pi_email": [sub.get("pi_email"), pi.get("email")],
+        }
+        return [v for v in candidates[field] if v]
+
+    def search_submissions(self, term: str, field: str | None = None):
+        """Search submissions by ``term`` (substring, case-insensitive).
+
+        ``field=None`` searches across all of ``SEARCH_FIELDS``; otherwise the
+        search is restricted to that one logical field. Raises ``ValueError``
+        for an unknown field. Matching reads from the full JSON record (see
+        ``_field_values``), so results stay consistent with the displayed
+        names. Results are ordered newest-first by ``submitted`` and returned
+        as parsed submission dicts (same shape as ``fetch_all_submissions``).
+        """
+        if field is not None and field not in self.SEARCH_FIELDS:
+            raise ValueError(
+                f"unknown field {field!r}; choose from: {', '.join(self.SEARCH_FIELDS)}"
+            )
+        needle = term.casefold()
+        fields = (field,) if field else self.SEARCH_FIELDS
+        results = []
+        for sub in self.fetch_all_submissions():
+            haystack = []
+            for f in fields:
+                haystack.extend(self._field_values(sub, f))
+            if any(needle in str(v).casefold() for v in haystack):
+                results.append(sub)
+        results.sort(key=lambda s: (s.get("submitted") or ""), reverse=True)
+        return results
+
     def upsert_share(self, share_obj: dict):
         share_json = json.dumps(share_obj, ensure_ascii=False)
         cur = self.conn.cursor()

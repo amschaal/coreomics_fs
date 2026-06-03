@@ -14,6 +14,7 @@ dependencies = [
 coreomics = "coreomics_fs.cli.project_cli:main"
 coreomics-build = "coreomics_fs.build.build_views:main"
 coreomics-fetch = "coreomics_fs.build.fetch_projects:main"
+coreomics-nav = "coreomics_fs.cli.navigate:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
