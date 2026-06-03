@@ -113,6 +113,26 @@ In the `[paths]` section, `date_format` needs **doubled percent signs** (e.g. `%
 
 ---
 
+## Fetching submissions
+
+`coreomics-fetch` pulls submissions from the API into SQLite (and syncs bioshare shares):
+
+```bash
+coreomics-fetch                 # full pull of all submissions for the configured lab
+coreomics-fetch --updated-days 7   # only submissions updated in the last 7 days
+coreomics-fetch --no-shares     # skip the bioshare shares fetch/sync
+```
+
+`--updated-days N` adds `updated__date__gte=<today − N days>` to the API query, so only
+recently-changed submissions are pulled and upserted — useful for fast incremental syncs
+(e.g. a frequent cron job). It is ignored when reading from `--input-file`. Records are
+upserted, never deleted, so an incremental run only adds/updates rows.
+
+Other useful flags: `--input-file/-i` (load from a local JSON file instead of the API),
+`--db-path/-d`, `--page-size`, `--lab`, `--api-base`, `--api-key`, `--init-db`.
+
+---
+
 ## Tab completion (optional)
 
 Add to `~/.bashrc` or `~/.zshrc`:

@@ -4,6 +4,7 @@ import configparser
 import os
 import sqlite3
 import argparse
+import datetime
 from pathlib import Path
 from ..config import load_config
 from ..db.sqlite_submissions import SubmissionsDB
@@ -17,9 +18,13 @@ def get_json(url: str, api_key: str) -> dict:
         return json.loads(resp.read().decode("utf-8"))
 
 
-def fetch_all_from_api(api_base_url: str, api_key: str, page_size: int = 100, lab: str = "PROTEOMICS"):
+def fetch_all_from_api(api_base_url: str, api_key: str, page_size: int = 100, lab: str | None = None, updated_since: str | None = None):
+    if lab is None:
+        lab = load_config()["api"]["lab_id"]
     results = []
-    page_url = f"{api_base_url}/api/submissions/?page=1&page_size={page_size}&lab={lab}" 
+    page_url = f"{api_base_url}/api/submissions/?page=1&page_size={page_size}&lab={lab}"
+    if updated_since:
+        page_url += f"&updated__date__gte={updated_since}"
     http = 'http://' in page_url
     if not http:
         page_url = 'https://' + page_url
@@ -162,15 +167,27 @@ def main(argv=None):
     parser.add_argument("--api-base", default=default_api_base)
     parser.add_argument("--api-key", default=default_api_key)
     parser.add_argument("--no-shares", action="store_true", help="Skip the bioshare shares fetch and DB sync (useful for offline/testing runs)")
+    parser.add_argument("--updated-days", type=int, metavar="N", help="Only pull submissions updated in the last N days (adds updated__date__gte to the API query). Ignored with --input-file.")
     args = parser.parse_args(argv)
 
     db_path = Path(args.db_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
+    updated_since = None
+    if args.updated_days is not None:
+        if args.updated_days < 0:
+            parser.error("--updated-days must be zero or a positive integer")
+        cutoff = datetime.date.today() - datetime.timedelta(days=args.updated_days)
+        updated_since = cutoff.isoformat()  # YYYY-MM-DD
+
     if args.input_file:
+        if updated_since:
+            print("Note: --updated-days is ignored when reading from --input-file.")
         submissions = load_from_file(Path(args.input_file))
     else:
-        submissions = fetch_all_from_api(args.api_base, args.api_key, page_size=args.page_size, lab=args.lab)
+        if updated_since:
+            print(f"Only fetching submissions updated on or after {updated_since} (last {args.updated_days} day(s)).")
+        submissions = fetch_all_from_api(args.api_base, args.api_key, page_size=args.page_size, lab=args.lab, updated_since=updated_since)
 
     db = SubmissionsDB(db_path)
     db.init_db()
