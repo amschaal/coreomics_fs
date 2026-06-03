@@ -26,7 +26,15 @@ ccd() {
             _src="${(%):-%N}"   # zsh
         fi
         _root="$(cd "$(dirname "$_src")/.." && pwd)"
-        dir="$(PYTHONPATH="${_root}/src:${PYTHONPATH}" python -m coreomics_fs.cli.navigate "$@")" || return
+        local _py
+        if command -v python3 >/dev/null 2>&1; then
+            _py=python3
+        elif command -v python >/dev/null 2>&1; then
+            _py=python
+        else
+            printf 'ccd: no python3/python interpreter found\n' >&2; return 1
+        fi
+        dir="$(PYTHONPATH="${_root}/src:${PYTHONPATH}" "$_py" -m coreomics_fs.cli.navigate "$@")" || return
     fi
 
     [ -n "$dir" ] || return                          # empty output -> do nothing
