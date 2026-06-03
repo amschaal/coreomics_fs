@@ -158,6 +158,17 @@ it with `coreomics-fetch --updated-days N` for fast incremental syncs. With no f
 projects are checked (the per-project check is cheap). The per-project `coreomics update`
 command performs the same refresh for the current project after re-fetching it.
 
+### Optional share subdirectory
+
+If `[paths] share_subdirectory` is set (e.g. `share`), build creates that subdirectory under
+each project's canonical directory and writes the project's `README.md` **inside it** instead
+of at the project root. `coreomics share` then links to that subdirectory (its `link_to_path`),
+so shared data and the README live together, separate from `.submission/` (which stays at the
+project root). Leave the key blank to keep READMEs at the project root.
+
+The value must be a single, plain subdirectory name — an absolute path, a value containing a
+path separator, or `.`/`..` is rejected as a hard error.
+
 ---
 
 ## Tab completion (optional)

@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
 from .api import SubmissionAPI
+from ..config import share_output_dir
 from ..db.sqlite_submissions import SubmissionsDB
 
 class DuplicatePathError(Exception):
@@ -110,7 +111,7 @@ class Submission:
         Raises SharesExistError if other shares exist and `force` is False.
         """
         project_dir = self.path.parent.parent if self.path.parent.name == ".submission" else self.path.parent
-        link_to_path = str(project_dir.resolve())
+        link_to_path = str(share_output_dir(project_dir, create=True).resolve())
         if path_prefix:
             old, new = path_prefix
             if link_to_path.startswith(old):
@@ -154,7 +155,7 @@ class Submission:
         """Write the rendered README to ``path`` (defaults to ``<project>/README.md``)."""
         if path is None:
             project_dir = self.path.parent.parent if self.path.parent.name == ".submission" else self.path.parent
-            path = project_dir / "README.md"
+            path = share_output_dir(project_dir, create=True) / "README.md"
         path = Path(path)
         path.write_text(self.render_readme(max_table_rows=max_table_rows), encoding="utf-8")
         return path
@@ -164,7 +165,8 @@ class Submission:
         path written, or None if it was already current."""
         from .readme import ensure_readme
         project_dir = self.path.parent.parent if self.path.parent.name == ".submission" else self.path.parent
-        return ensure_readme(project_dir, self._data, max_table_rows=max_table_rows, force=force)
+        out_dir = share_output_dir(project_dir, create=True)
+        return ensure_readme(out_dir, self._data, max_table_rows=max_table_rows, force=force)
 
     def format_submission(self, section='all') -> str:
         """Return a human-readable multi-line string for a submission."""

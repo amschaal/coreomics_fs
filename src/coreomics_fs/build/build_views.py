@@ -4,7 +4,7 @@ import argparse
 import csv, sys, os, shutil, datetime, json, sqlite3
 from pathlib import Path
 from .views import safe_name
-from ..config import load_config
+from ..config import load_config, get_share_subdirectory, share_output_dir
 # ----- load config ---------------------------------------------------------
 cfg = load_config()
 
@@ -225,6 +225,13 @@ def main(argv=None):
     parser.add_argument("--updated-days", type=int, metavar="N", help="Only refresh projects whose submission was updated in the last N days (default: all).")
     args = parser.parse_args(argv)
 
+    # Validate the share subdirectory once up front so a misconfiguration aborts
+    # before any disk work (raises ValueError on an invalid value).
+    try:
+        get_share_subdirectory(cfg)
+    except ValueError as e:
+        parser.error(str(e))
+
     file_path = Path(args.projects_file) if args.projects_file else Path(DB_DIR) / 'submissions.db'
 
     is_csv = file_path.suffix == '.csv'
@@ -256,7 +263,10 @@ def main(argv=None):
                 dst = ensure_canonical(proj)
                 if refresh_submission_json(dst, proj):
                     refreshed += 1
-                if not args.no_readme and ensure_readme(dst, proj):
+                # README (and the share dir, if configured) live in the share
+                # subdirectory when set; submission.json stays at the project root.
+                out_dir = share_output_dir(dst, cfg, create=True)
+                if not args.no_readme and ensure_readme(out_dir, proj):
                     readmes += 1
             except Exception as e:
                 print(f"Refresh skipped for id={proj.get('id') or proj.get('ID')}: {e}")
