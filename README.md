@@ -95,7 +95,7 @@ cp src/coreomics_fs/config.example.ini ~/.config/coreomics/config.ini
 # then edit ~/.config/coreomics/config.ini
 ```
 
-See [src/coreomics_fs/config.example.ini](src/coreomics_fs/config.example.ini) for the full set of required sections and keys (`[paths]`, `[api]`, `[retain]`).
+See [src/coreomics_fs/config.example.ini](src/coreomics_fs/config.example.ini) for the full set of required sections and keys (`[paths]`, `[api]`, `[retain]`, and the optional `[permissions]`).
 
 ### Config file lookup order
 
@@ -168,6 +168,45 @@ project root). Leave the key blank to keep READMEs at the project root.
 
 The value must be a single, plain subdirectory name — an absolute path, a value containing a
 path separator, or `.`/`..` is rejected as a hard error.
+
+### Protecting the tree from deletion (`[permissions]`)
+
+Lab users typically reach the tree as **SMB clients**. To stop them from deleting whole
+projects (or months/years) while still letting them manage data inside their own project,
+set a lab group in `[permissions]`:
+
+```ini
+[permissions]
+group = proteomics-lab    ; lab group that owns submitted data; blank = feature off
+owner = coreomics         ; service user that owns the tree; blank = leave as the build user
+```
+
+When `group` is set, each build (and the one-time `--enforce-permissions` sweep) applies:
+
+| Level                                   | Mode    | Group access | Effect                                  |
+| --------------------------------------- | ------- | ------------ | --------------------------------------- |
+| `canonical_root`, `<YYYY>`, `<MM>`      | `02755` | `r-x`        | can't create/delete the project dir     |
+| project `<id>/`                         | `02775` | `rwx`        | can add/remove data **inside**          |
+| `<id>/.submission/` + `submission.json` | `0755`/`0644` | `r-x`  | metadata protected from users           |
+| `views_root/` tree                      | `02755` | `r-x`        | browse only; can't delete view symlinks |
+
+This works because deleting a directory entry requires **write on its parent** — so a
+group-`r-x` `<MM>` blocks removal of `<id>`. The setgid bit (`02xxx`) makes new files inherit
+the lab group automatically.
+
+The build process must run as the **owner** (a member of the lab group) so `chgrp`/`chmod`
+succeed without root. To migrate an existing tree (or to also `chown` to a different `owner`,
+which needs root), run once:
+
+```bash
+sudo CONFIG_PATH=... coreomics-build --enforce-permissions   # full sweep of canonical + views
+```
+
+**Samba note:** the share must not undercut POSIX bits — avoid `admin users` / `force user`
+mapping lab users to the owner and `dos filemode = yes`; lab users must map to the **group**,
+not the owner. `inherit permissions = yes` pairs well with the setgid model.
+
+Leave `group` blank to disable enforcement entirely (default; fully backward compatible).
 
 ---
 

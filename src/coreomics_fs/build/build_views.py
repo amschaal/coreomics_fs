@@ -4,6 +4,7 @@ import argparse
 import csv, sys, os, shutil, datetime, json, sqlite3
 from pathlib import Path
 from .views import safe_name
+from .permissions import load_perm_policy, enforce_project, enforce_share, enforce_tree
 from ..config import load_config, get_share_subdirectory, share_output_dir
 # ----- load config ---------------------------------------------------------
 cfg = load_config()
@@ -14,6 +15,9 @@ VIEWS_ROOT = Path(cfg["paths"]["views_root"])
 DATE_FMT   = cfg["paths"]["date_format"]
 LOG_NAME   = cfg["paths"]["log_name"]
 ERROR_LOG   = cfg["paths"]["error_log"]
+
+# Ownership/permission policy (None when [permissions] group is unconfigured).
+POLICY = load_perm_policy(cfg)
 
 # ----- utility ------------------------------------------------------------
 def log(msg, log_path, console=False):
@@ -113,6 +117,10 @@ def ensure_canonical(proj):
         with open(submission_json_path, 'w') as f:
             json.dump(proj, f, indent=2)
         _set_timestamp(dst, submitted)
+    # Enforce ownership/permissions every build (idempotent, self-healing) so
+    # pre-existing project dirs get locked down too.
+    if POLICY:
+        enforce_project(dst, POLICY, CANON_ROOT)
     return dst
 
 # ----- build a single view version ----------------------------------------
@@ -223,6 +231,7 @@ def main(argv=None):
     )
     parser.add_argument("--no-readme", action="store_true", help="Skip per-project README.md generation (submission.json is still refreshed).")
     parser.add_argument("--updated-days", type=int, metavar="N", help="Only refresh projects whose submission was updated in the last N days (default: all).")
+    parser.add_argument("--enforce-permissions", action="store_true", help="Apply the [permissions] ownership/mode policy across the whole canonical + views trees and exit (one-time migration). Run as root to also chown to the configured owner.")
     args = parser.parse_args(argv)
 
     # Validate the share subdirectory once up front so a misconfiguration aborts
@@ -231,6 +240,22 @@ def main(argv=None):
         get_share_subdirectory(cfg)
     except ValueError as e:
         parser.error(str(e))
+
+    # New dirs/files default to group r-x / r-- so the tree stays locked down
+    # without an explicit chmod on every path.
+    if POLICY:
+        os.umask(0o022)
+
+    if args.enforce_permissions:
+        if not POLICY:
+            parser.error("--enforce-permissions requires [permissions] group to be configured")
+        print(f"Enforcing permissions on {CANON_ROOT} ...")
+        enforce_tree(CANON_ROOT, POLICY, project_dirs_writable=True,
+                     share_name=get_share_subdirectory(cfg))
+        print(f"Enforcing permissions on {VIEWS_ROOT} ...")
+        enforce_tree(VIEWS_ROOT, POLICY)
+        print("Done.")
+        return
 
     file_path = Path(args.projects_file) if args.projects_file else Path(DB_DIR) / 'submissions.db'
 
@@ -266,6 +291,10 @@ def main(argv=None):
                 # README (and the share dir, if configured) live in the share
                 # subdirectory when set; submission.json stays at the project root.
                 out_dir = share_output_dir(dst, cfg, create=True)
+                # The share dir is created after enforce_project ran, so make it
+                # group-writable here (lab users share data inside it).
+                if POLICY and Path(out_dir) != dst:
+                    enforce_share(out_dir, POLICY)
                 if not args.no_readme and ensure_readme(out_dir, proj):
                     readmes += 1
             except Exception as e:
@@ -298,6 +327,11 @@ def main(argv=None):
 
         # summary
         print(f"[{view}] built version {today} - log: {log_path}")
+
+    # Lock down the whole views tree once: container dirs, version dirs and the
+    # symlinks within them, so users can browse but not delete view structure.
+    if POLICY:
+        enforce_tree(VIEWS_ROOT, POLICY)
 
     prune_old_views()
 
