@@ -161,6 +161,45 @@ def _parse_date(name: str) -> datetime.date | None:
         return None
 
 
+def _safe_versions_root():
+    """Resolve the view version root for pruning, or ``None`` if it doesn't exist
+    yet (first build — nothing to prune).
+
+    ``main`` already asserts the canonical and views *roots* are disjoint up front
+    (:func:`_assert_roots_disjoint`), which subsumes any ``.versions``-vs-canonical
+    overlap. This keeps a narrow backstop so prune stays self-guarding even if ever
+    called outside ``main``: it refuses to operate if ``.versions`` somehow overlaps
+    ``canonical_root``."""
+    canon = CANON_ROOT.resolve()
+    versions_root = (VIEWS_ROOT / ".versions").resolve()
+    if (versions_root == canon
+            or versions_root.is_relative_to(canon)
+            or canon.is_relative_to(versions_root)):
+        sys.exit(
+            "refusing to prune: views version root "
+            f"{versions_root} overlaps canonical_root {canon} — "
+            "check [paths] views_root / canonical_root in your config"
+        )
+    if not versions_root.is_dir():
+        return None
+    return versions_root
+
+
+def _assert_prunable(path: Path, versions_root: Path):
+    """Last-line guard immediately before an ``rmtree``.
+
+    The target must resolve to a *dated* snapshot folder strictly inside the
+    validated ``versions_root`` — i.e. ``.versions`` must be an ancestor of the
+    real (symlink-followed) path. A symlink that escapes the tree, a path outside
+    ``.versions``, or a non-date folder name aborts the build rather than deleting
+    anything."""
+    resolved = path.resolve()
+    if resolved == versions_root or not resolved.is_relative_to(versions_root):
+        sys.exit(f"refusing to prune: {path} resolves outside version root {versions_root}")
+    if _parse_date(path.name) is None:
+        sys.exit(f"refusing to prune: {path} is not a dated snapshot folder")
+
+
 def prune_old_views():
     """
     Delete stale view versions while keeping a configurable number of
@@ -172,9 +211,10 @@ def prune_old_views():
     keep_weekly  = cfg.getint("retain", "weekly") or 4
     keep_monthly = cfg.getint("retain", "monthly") or 12
 
-    # root that holds all view-specific version trees
-    versions_root = VIEWS_ROOT / ".versions"
-    if not versions_root.is_dir():
+    # root that holds all view-specific version trees — validated to be a
+    # ``.versions`` dir disjoint from canonical_root before we delete anything.
+    versions_root = _safe_versions_root()
+    if versions_root is None:
         return
 
     for view_dir in versions_root.iterdir():          # each <view>
@@ -214,6 +254,7 @@ def prune_old_views():
         # -------- delete everything else --------
         for p in dated_dirs:
             if p not in keep:
+                _assert_prunable(p, versions_root)
                 print(f'prune {p}')
                 shutil.rmtree(p)
                 # remove any stray symlinks that pointed to the deleted dir
@@ -222,6 +263,30 @@ def prune_old_views():
                         link.unlink()
 
 # ----- main ----------------------------------------------------------------
+def _assert_roots_disjoint():
+    """Refuse to run if the canonical and views trees overlap on disk.
+
+    The two must be entirely separate directory trees. The build re-modes the
+    *whole* views tree with ``enforce_tree`` (group ``r-x``, non-writable) and
+    prunes dated folders beneath ``.versions``; if ``canonical_root`` sat inside
+    ``views_root`` (or vice versa) those sweeps would strip write bits from — or
+    delete — real submission data. Note this is stricter than prune's own guard,
+    which only forbids ``.versions`` itself from overlapping canonical: here we
+    reject an ancestor/descendant relationship between the two *roots*, catching
+    e.g. ``views_root`` being a parent of ``canonical_root`` with ``.versions`` as
+    a harmless-looking sibling. Validated once, before any disk work."""
+    canon = CANON_ROOT.resolve()
+    views = VIEWS_ROOT.resolve()
+    if (canon == views
+            or canon.is_relative_to(views)
+            or views.is_relative_to(canon)):
+        sys.exit(
+            "refusing to run: canonical_root and views_root overlap "
+            f"(canonical_root={canon}, views_root={views}) — they must be "
+            "separate directory trees. Check [paths] in your config."
+        )
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Build filesystem views from submission data")
     parser.add_argument(
@@ -233,6 +298,11 @@ def main(argv=None):
     parser.add_argument("--updated-days", type=int, metavar="N", help="Only refresh projects whose submission was updated in the last N days (default: all).")
     parser.add_argument("--enforce-permissions", action="store_true", help="Apply the [permissions] ownership/mode policy across the whole canonical + views trees and exit (one-time migration). Run as root to also chown to the configured owner.")
     args = parser.parse_args(argv)
+
+    # The canonical and views trees must be disjoint: the build re-modes and
+    # prunes the entire views tree, which would corrupt or delete canonical data
+    # if either root were nested in the other. Validate before any disk work.
+    _assert_roots_disjoint()
 
     # Validate the share subdirectory once up front so a misconfiguration aborts
     # before any disk work (raises ValueError on an invalid value).
