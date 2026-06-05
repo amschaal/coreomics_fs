@@ -383,7 +383,9 @@ def main(argv=None):
 
         # final destination (replace existing version for today)
         final_dir = VIEWS_ROOT / ".versions" / view / today
-        if final_dir.is_symlink() or final_dir.is_dir():
+        if final_dir.is_symlink():
+            final_dir.unlink()          # rmtree can't remove a symlink
+        elif final_dir.is_dir():
             shutil.rmtree(final_dir)
         shutil.move(str(tmp_dir), str(final_dir))
 
