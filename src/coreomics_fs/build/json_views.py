@@ -11,7 +11,7 @@ def safe_name(s: str) -> str:
 def get_year_month(submitted: str):
     """Extract YYYY and zero-padded MM from ISO-like timestamp."""
     dt = submitted[:10].split()[0]               # e.g. 2025-12-16
-    y, m, _ = dt.split("-")
+    y, m = dt.split("-")[:2]                      # tolerate missing day, matches canonical
     return y, f"{int(m):02d}"
 
 # ---------- view-specific component functions ----------
@@ -28,7 +28,9 @@ def get_pi_last_initial(proj):
         return safe_name(proj.get("pi_last_name", ""))[:1]
 
 def get_internal_id(proj):
-    return safe_name(proj.get("internal_id", proj.get("id")))
+    # `or` (not a .get default) so a present-but-null/empty internal_id still
+    # falls back to id — old submissions carry internal_id: null.
+    return safe_name(proj.get("internal_id") or proj.get("id"))
 
 def get_institute(proj):
     if 'pi' in proj and proj['pi'] and proj['pi']['institution']:
