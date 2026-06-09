@@ -10,6 +10,13 @@ dependencies = [
     "argcomplete",
 ]
 
+[project.optional-dependencies]
+# Needed only to build the optional Windows .lnk views tree
+# ([paths] windows_views_root). Install with: pip install 'coreomics-fs[windows]'
+windows = [
+    "pylnk3>=0.4.2",
+]
+
 [project.scripts]
 coreomics = "coreomics_fs.cli.project_cli:main"
 coreomics-build = "coreomics_fs.build.build_views:main"

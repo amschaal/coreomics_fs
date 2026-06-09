@@ -16,6 +16,18 @@ DATE_FMT   = cfg["paths"]["date_format"]
 LOG_NAME   = cfg["paths"]["log_name"]
 ERROR_LOG   = cfg["paths"]["error_log"]
 
+# Optional parallel views tree of Windows .lnk shortcuts (blank = feature off).
+_win_root = (cfg.get("paths", "windows_views_root", fallback="") or "").strip()
+WIN_VIEWS_ROOT = Path(_win_root) if _win_root else None
+# How leaves address the canonical tree: "unc" (\\server\share\...) or "drive"
+# (a mapped letter, e.g. Z:\...). Both need windows_server_path (the server dir
+# the Windows share maps to); unc also needs windows_unc_base, drive needs
+# windows_drive_letter.
+WIN_TARGET = (cfg.get("paths", "windows_views_target", fallback="unc") or "unc").strip().lower()
+WIN_SERVER_PATH = (cfg.get("paths", "windows_server_path", fallback="") or "").strip()
+WIN_UNC_BASE = (cfg.get("paths", "windows_unc_base", fallback="") or "").strip()
+WIN_DRIVE_LETTER = (cfg.get("paths", "windows_drive_letter", fallback="") or "").strip()
+
 # Ownership/permission policy (None when [permissions] group is unconfigured).
 POLICY = load_perm_policy(cfg)
 
@@ -124,8 +136,14 @@ def ensure_canonical(proj):
     return dst
 
 # ----- build a single view version ----------------------------------------
-def build_view_version(view_name, comps, projects, version_dir, log_path):
-    error_log = version_dir / ERROR_LOG
+def _iter_view_leaves(view_name, comps, projects, error_log):
+    """Yield ``(parts, canon, submitted)`` for each project that resolves in a
+    view: the path segments, its canonical directory, and the submitted date.
+
+    Shared by the POSIX symlink build (:func:`build_view_version`) and the
+    Windows ``.lnk`` build (:func:`build_windows_views`) so both trees use the
+    identical view structure and skip-on-missing-field behavior. A project whose
+    extractor chokes on missing/invalid data is logged and skipped."""
     for proj in projects:
         id = proj.get('id') or proj.get('ID')
         submitted = proj.get('submitted') or proj.get('Submitted')
@@ -144,12 +162,94 @@ def build_view_version(view_name, comps, projects, version_dir, log_path):
         if not parts:
             continue
 
-        canon = ensure_canonical(proj)
+        yield parts, ensure_canonical(proj), submitted
+
+
+def build_view_version(view_name, comps, projects, version_dir, log_path):
+    error_log = version_dir / ERROR_LOG
+    for parts, canon, submitted in _iter_view_leaves(view_name, comps, projects, error_log):
         leaf = version_dir.joinpath(*parts)
         leaf.parent.mkdir(parents=True, exist_ok=True)
         rel_target = rel_symlink(canon, leaf)
         _set_timestamp(leaf, submitted)
         log(f"'{'/'.join(parts)}' -> '{rel_target}'", log_path)
+
+
+# ----- build the Windows .lnk views tree -----------------------------------
+def build_windows_views(VIEWS, projects):
+    """Build a parallel views tree of Windows ``.lnk`` shortcuts (current state).
+
+    Same structure as the POSIX ``views_root`` tree, but every segment is a real
+    directory and each project leaf is a ``<id>.lnk`` shortcut into the canonical
+    tree (Windows Explorer can't follow POSIX symlinks on a mapped SMB drive).
+    No ``.versions`` history: each view is rebuilt in a temp dir and swapped in
+    via atomic renames, so readers only ever see a complete tree."""
+    from . import winlnk
+
+    # Resolve and validate the canonical -> Windows-path mapping once up front so
+    # a misconfiguration aborts before any disk work. The shortcut target is the
+    # Windows prefix (UNC base or drive letter) joined to the canonical path
+    # relative to the server dir that the Windows share maps to.
+    if WIN_TARGET not in ("unc", "drive"):
+        sys.exit(f"unknown windows_views_target {WIN_TARGET!r} (use 'unc' or 'drive')")
+    if not WIN_SERVER_PATH:
+        sys.exit("windows_views_root requires windows_server_path (the server "
+                 "directory that the Windows share/drive maps to)")
+    server_path = os.path.abspath(WIN_SERVER_PATH)
+    canon_abs_root = os.path.abspath(CANON_ROOT)
+    if canon_abs_root != server_path and not canon_abs_root.startswith(server_path + os.sep):
+        sys.exit(f"windows_server_path {server_path} must be an ancestor of "
+                 f"canonical_root {canon_abs_root}")
+    if WIN_TARGET == "unc":
+        if not WIN_UNC_BASE:
+            sys.exit("windows_views_target = unc requires windows_unc_base (e.g. \\\\nas\\share)")
+        prefix = WIN_UNC_BASE.rstrip("\\")
+    else:
+        if not WIN_DRIVE_LETTER:
+            sys.exit("windows_views_target = drive requires windows_drive_letter (e.g. Z:)")
+        prefix = WIN_DRIVE_LETTER.rstrip("\\")
+
+    def win_target(canon_abs):
+        suffix = os.path.relpath(canon_abs, start=server_path).replace(os.sep, "\\")
+        return prefix + "\\" + suffix
+
+    tmp_root = WIN_VIEWS_ROOT / ".tmp"
+    if tmp_root.exists():
+        shutil.rmtree(tmp_root)
+
+    for view, comps in VIEWS.items():
+        stage = tmp_root / view
+        stage.mkdir(parents=True, exist_ok=True)
+        error_log = stage / ERROR_LOG
+        count = 0
+        for parts, canon, submitted in _iter_view_leaves(view, comps, projects, error_log):
+            leaf = stage.joinpath(*parts)
+            leaf_lnk = leaf.with_name(leaf.name + ".lnk")
+            leaf_lnk.parent.mkdir(parents=True, exist_ok=True)
+            target = win_target(os.path.abspath(canon))
+            if WIN_TARGET == "unc":
+                winlnk.write_unc_lnk(leaf_lnk, target)
+            else:
+                winlnk.write_drive_lnk(leaf_lnk, target)
+            _set_timestamp(leaf_lnk, submitted)
+            count += 1
+
+        # Swap the freshly built tree in for the live one via atomic renames:
+        # move the current <view> aside, rename the new one into place, drop the
+        # old. The only gap is the instant between the two renames — fine for a
+        # periodic build with no concurrent critical reader. os.replace can't drop
+        # a non-empty dir onto another, hence move-aside-then-rename.
+        final = WIN_VIEWS_ROOT / view
+        old = tmp_root / (view + ".old")
+        if final.exists():
+            os.replace(final, old)
+        os.replace(stage, final)
+        if old.exists():
+            shutil.rmtree(old)
+        print(f"[{view}] built {count} windows shortcuts - {final}")
+
+    if tmp_root.exists():
+        shutil.rmtree(tmp_root)
 
 
 # ----- pruning -------------------------------------------------------------
@@ -274,17 +374,22 @@ def _assert_roots_disjoint():
     which only forbids ``.versions`` itself from overlapping canonical: here we
     reject an ancestor/descendant relationship between the two *roots*, catching
     e.g. ``views_root`` being a parent of ``canonical_root`` with ``.versions`` as
-    a harmless-looking sibling. Validated once, before any disk work."""
-    canon = CANON_ROOT.resolve()
-    views = VIEWS_ROOT.resolve()
-    if (canon == views
-            or canon.is_relative_to(views)
-            or views.is_relative_to(canon)):
-        sys.exit(
-            "refusing to run: canonical_root and views_root overlap "
-            f"(canonical_root={canon}, views_root={views}) — they must be "
-            "separate directory trees. Check [paths] in your config."
-        )
+    a harmless-looking sibling. Validated once, before any disk work. The
+    optional ``windows_views_root`` is held to the same rule against both other
+    roots (the Windows build rebuilds/swaps its whole tree)."""
+    roots = [("canonical_root", CANON_ROOT.resolve()),
+             ("views_root", VIEWS_ROOT.resolve())]
+    if WIN_VIEWS_ROOT:
+        roots.append(("windows_views_root", WIN_VIEWS_ROOT.resolve()))
+    for i in range(len(roots)):
+        for j in range(i + 1, len(roots)):
+            (n1, p1), (n2, p2) = roots[i], roots[j]
+            if p1 == p2 or p1.is_relative_to(p2) or p2.is_relative_to(p1):
+                sys.exit(
+                    f"refusing to run: {n1} and {n2} overlap "
+                    f"({n1}={p1}, {n2}={p2}) — they must be separate directory "
+                    "trees. Check [paths] in your config."
+                )
 
 
 def main(argv=None):
@@ -324,6 +429,9 @@ def main(argv=None):
                      share_name=get_share_subdirectory(cfg))
         print(f"Enforcing permissions on {VIEWS_ROOT} ...")
         enforce_tree(VIEWS_ROOT, POLICY)
+        if WIN_VIEWS_ROOT:
+            print(f"Enforcing permissions on {WIN_VIEWS_ROOT} ...")
+            enforce_tree(WIN_VIEWS_ROOT, POLICY)
         print("Done.")
         return
 
@@ -400,10 +508,16 @@ def main(argv=None):
         # summary
         print(f"[{view}] built version {today} - log: {log_path}")
 
+    # Parallel Windows .lnk views tree (current state only), when configured.
+    if WIN_VIEWS_ROOT:
+        build_windows_views(VIEWS, projects)
+
     # Lock down the whole views tree once: container dirs, version dirs and the
     # symlinks within them, so users can browse but not delete view structure.
     if POLICY:
         enforce_tree(VIEWS_ROOT, POLICY)
+        if WIN_VIEWS_ROOT:
+            enforce_tree(WIN_VIEWS_ROOT, POLICY)
 
     prune_old_views()
 

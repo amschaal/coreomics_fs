@@ -169,6 +169,42 @@ project root). Leave the key blank to keep READMEs at the project root.
 The value must be a single, plain subdirectory name — an absolute path, a value containing a
 path separator, or `.`/`..` is rejected as a hard error.
 
+### Optional Windows views tree (`.lnk` shortcuts)
+
+The default views are POSIX **symlinks**, which Linux/macOS SMB clients follow fine but
+**Windows Explorer cannot follow on a mapped drive** — to a Windows user the view leaves look
+broken. Set `[paths] windows_views_root` to also build a **parallel views tree of Windows
+`.lnk` shortcuts** under that root. It has the same structure as `views_root` (real
+directories for `pi`/`institute`/`month`…), but each project leaf is a `<id>.lnk` shortcut into
+the canonical tree. Point your Windows SMB share at `windows_views_root`; double-clicking a
+leaf opens the project folder. Leave the key blank to disable (default).
+
+This tree is **current-state only** — it's rebuilt and atomically swapped in on every build, so
+it has no `.versions` history (the POSIX `views_root` keeps its snapshots). It must be a
+separate directory tree, disjoint from both `canonical_root` and `views_root`.
+
+**Requires `pylnk3`** on the build host (a complete, Explorer-resolvable `.lnk` needs a binary
+shell target list that the stdlib can't reasonably emit):
+
+```bash
+pip install pylnk3            # or: pip install '.[windows]'
+```
+
+Because a shortcut's target is **absolute**, the build rewrites each canonical path to a Windows
+path. Set `windows_server_path` to the server-side directory the Windows share maps to (e.g. if
+the `[proteomics]` Samba share's `path = /data`, set `/data`; it must be an ancestor of
+`canonical_root`), then choose how leaves address it with `windows_views_target`:
+
+| Value         | Points at                  | Also set              | Use when                                              |
+| ------------- | -------------------------- | --------------------- | ----------------------------------------------------- |
+| `unc` (default) | `\\server\share\...`     | `windows_unc_base` (e.g. `\\nas\proteomics`) | works no matter which drive letter each user maps |
+| `drive`       | `Z:\...`                   | `windows_drive_letter` (e.g. `Z:`) | everyone maps the share to the same letter (e.g. via GPO) |
+
+> **Verify on a real Windows client.** `.lnk` resolution varies across Explorer versions. After
+> the first build, map the share on Windows and confirm double-clicking a leaf opens the
+> canonical project folder. `unc` is the most robust; switch to `drive` only if your users have a
+> guaranteed common drive letter.
+
 ### Protecting the tree from deletion (`[permissions]`)
 
 Lab users typically reach the tree as **SMB clients**. To stop them from deleting whole
@@ -189,6 +225,7 @@ When `group` is set, each build (and the one-time `--enforce-permissions` sweep)
 | project `<id>/`                         | `02775` | `rwx`        | can add/remove data **inside**          |
 | `<id>/.submission/` + `submission.json` | `0755`/`0644` | `r-x`  | metadata protected from users           |
 | `views_root/` tree                      | `02755` | `r-x`        | browse only; can't delete view symlinks |
+| `windows_views_root/` tree (if set)     | `02755` | `r-x`        | browse only; can't delete `.lnk` leaves |
 
 This works because deleting a directory entry requires **write on its parent** — so a
 group-`r-x` `<MM>` blocks removal of `<id>`. The setgid bit (`02xxx`) makes new files inherit
@@ -199,7 +236,7 @@ succeed without root. To migrate an existing tree (or to also `chown` to a diffe
 which needs root), run once:
 
 ```bash
-sudo CONFIG_PATH=... coreomics-build --enforce-permissions   # full sweep of canonical + views
+sudo CONFIG_PATH=... coreomics-build --enforce-permissions   # full sweep of canonical + views (+ windows views, if set)
 ```
 
 **Samba note:** the share must not undercut POSIX bits — avoid `admin users` / `force user`
