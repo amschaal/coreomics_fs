@@ -438,6 +438,28 @@ def _assert_roots_disjoint():
                 )
 
 
+def _assert_views_under_canonical_parent():
+    """Require each views tree to live under canonical_root's parent directory.
+
+    The deletion guard (:func:`_assert_under_views`) permits move/delete anywhere
+    inside a views root, so a views root must be confined near the canonical data
+    — never something far-reaching like ``/`` or ``/views``. We require
+    ``views_root`` (and ``windows_views_root`` when set) to resolve inside
+    ``canonical_root``'s parent, e.g. ``/share/proteomics/coreomics/{projects,views}``.
+    Disjointness from canonical is already enforced by ``_assert_roots_disjoint``."""
+    canon_parent = CANON_ROOT.resolve().parent
+    checks = [("views_root", VIEWS_ROOT.resolve())]
+    if WIN_VIEWS_ROOT:
+        checks.append(("windows_views_root", WIN_VIEWS_ROOT.resolve()))
+    for name, p in checks:
+        if not p.is_relative_to(canon_parent):
+            sys.exit(
+                f"refusing to run: {name} {p} must live inside canonical_root's "
+                f"parent directory {canon_parent} (e.g. {canon_parent}/views "
+                f"alongside the projects tree). Check [paths] in your config."
+            )
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Build filesystem views from submission data")
     parser.add_argument(
@@ -454,6 +476,9 @@ def main(argv=None):
     # prunes the entire views tree, which would corrupt or delete canonical data
     # if either root were nested in the other. Validate before any disk work.
     _assert_roots_disjoint()
+    # ...and each views tree must live under canonical_root's parent, so the
+    # deletion guard's allowlist can never be widened to a far-away path.
+    _assert_views_under_canonical_parent()
 
     # Validate the share subdirectory once up front so a misconfiguration aborts
     # before any disk work (raises ValueError on an invalid value).

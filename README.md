@@ -97,6 +97,8 @@ cp src/coreomics_fs/config.example.ini ~/.config/coreomics/config.ini
 
 See [src/coreomics_fs/config.example.ini](src/coreomics_fs/config.example.ini) for the full set of required sections and keys (`[paths]`, `[api]`, `[retain]`, and the optional `[permissions]`).
 
+`views_root` (and `windows_views_root`, if set) **must live inside `canonical_root`'s parent directory** — the build refuses to run otherwise. The expected layout is a set of siblings under one parent, e.g. `/share/proteomics/coreomics/{projects,views,windows}`. This keeps the trees disjoint from canonical data while ensuring a build can only ever move or delete files within a views tree, never somewhere far-reaching like `/`.
+
 ### Config file lookup order
 
 The first file found wins ([src/coreomics_fs/config.py:7-11](src/coreomics_fs/config.py#L7-L11)):
