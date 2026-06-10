@@ -38,12 +38,58 @@ def log(msg, log_path, console=False):
     with open(log_path, "a") as lf:
         lf.write(msg + "\n")
 
+def _deletable_roots():
+    """Roots a build may move/delete within: the views trees, never canonical."""
+    roots = [VIEWS_ROOT.resolve()]
+    if WIN_VIEWS_ROOT:
+        roots.append(WIN_VIEWS_ROOT.resolve())
+    return roots
+
+
+def _assert_under_views(path: Path, op: str):
+    """Abort unless ``path`` lives inside a views tree (never the canonical tree).
+
+    Checks the *parent*, resolving symlinks along the way, because deleting an
+    entry is governed by where it lives — not where a symlink leaf points. This
+    deliberately does NOT resolve a symlink leaf itself: unlinking a view symlink
+    must be validated by the symlink's location, not its canonical target, so a
+    view symlink that points into the canonical tree is still safely removable and
+    its target is never followed or deleted."""
+    parent = Path(path).parent.resolve()
+    roots = _deletable_roots()
+    if not any(parent == r or parent.is_relative_to(r) for r in roots):
+        sys.exit(f"refusing to {op}: {path} is not inside a views root "
+                 f"({', '.join(str(r) for r in roots)})")
+
+
+def _safe_unlink(path):
+    _assert_under_views(path, "unlink")
+    Path(path).unlink()
+
+
+def _safe_rmtree(path):
+    _assert_under_views(path, "rmtree")
+    shutil.rmtree(path)
+
+
+def _safe_move(src, dst):
+    _assert_under_views(src, "move")
+    _assert_under_views(dst, "move")
+    shutil.move(str(src), str(dst))
+
+
+def _safe_replace(src, dst):
+    _assert_under_views(src, "replace")
+    _assert_under_views(dst, "replace")
+    os.replace(src, dst)
+
+
 def rel_symlink(target: Path, link: Path):
     """Create a relative symlink; parent dirs are ensured."""
     link.parent.mkdir(parents=True, exist_ok=True)
     rel_target = os.path.relpath(target, start=link.parent)
     if link.is_symlink() or link.exists():
-        link.unlink()
+        _safe_unlink(link)
     link.symlink_to(rel_target)
     return rel_target
 
@@ -215,7 +261,7 @@ def build_windows_views(VIEWS, projects):
 
     tmp_root = WIN_VIEWS_ROOT / ".tmp"
     if tmp_root.exists():
-        shutil.rmtree(tmp_root)
+        _safe_rmtree(tmp_root)
 
     for view, comps in VIEWS.items():
         stage = tmp_root / view
@@ -242,14 +288,14 @@ def build_windows_views(VIEWS, projects):
         final = WIN_VIEWS_ROOT / view
         old = tmp_root / (view + ".old")
         if final.exists():
-            os.replace(final, old)
-        os.replace(stage, final)
+            _safe_replace(final, old)
+        _safe_replace(stage, final)
         if old.exists():
-            shutil.rmtree(old)
+            _safe_rmtree(old)
         print(f"[{view}] built {count} windows shortcuts - {final}")
 
     if tmp_root.exists():
-        shutil.rmtree(tmp_root)
+        _safe_rmtree(tmp_root)
 
 
 # ----- pruning -------------------------------------------------------------
@@ -356,11 +402,11 @@ def prune_old_views():
             if p not in keep:
                 _assert_prunable(p, versions_root)
                 print(f'prune {p}')
-                shutil.rmtree(p)
+                _safe_rmtree(p)
                 # remove any stray symlinks that pointed to the deleted dir
                 for link in view_dir.iterdir():
                     if link.is_symlink() and link.resolve() == p:
-                        link.unlink()
+                        _safe_unlink(link)
 
 # ----- main ----------------------------------------------------------------
 def _assert_roots_disjoint():
@@ -483,7 +529,7 @@ def main(argv=None):
         # temporary staging area
         tmp_dir = VIEWS_ROOT / ".versions_tmp" / view / today
         if tmp_dir.exists():
-            shutil.rmtree(tmp_dir)
+            _safe_rmtree(tmp_dir)
         tmp_dir.mkdir(parents=True)
 
         log_path = tmp_dir / LOG_NAME
@@ -492,10 +538,10 @@ def main(argv=None):
         # final destination (replace existing version for today)
         final_dir = VIEWS_ROOT / ".versions" / view / today
         if final_dir.is_symlink():
-            final_dir.unlink()          # rmtree can't remove a symlink
+            _safe_unlink(final_dir)     # rmtree can't remove a symlink
         elif final_dir.is_dir():
-            shutil.rmtree(final_dir)
-        shutil.move(str(tmp_dir), str(final_dir))
+            _safe_rmtree(final_dir)
+        _safe_move(tmp_dir, final_dir)
 
         # latest symlink inside .versions
         latest_link = VIEWS_ROOT / ".versions" / view / "latest"
