@@ -10,3 +10,5 @@ chats
 *.xlsx
 *.tsv
 docker-compose.override.yml
+# Real deployed admin override; ship only config.override.example.ini
+config.override.ini

@@ -35,6 +35,8 @@ Config is loaded by [src/coreomics_fs/config.py](src/coreomics_fs/config.py) usi
 2. `~/.config/coreomics/config.ini`
 3. `<package_dir>/config.ini` (dev-checkout fallback)
 
+After the base config is chosen, an optional **override** is layered on top of it per-key (`_apply_override`): `$CONFIG_OVERRIDE_PATH` if set, else `<package_dir>/config.override.ini`. It lets a deployer lock keys (e.g. `canonical_root`/`views_root`) a user's config can't change; only keys present in the override are replaced, and a one-line stderr notice fires when an override changes a base value. `load_config()` is the single config chokepoint, so the override applies to every command. Ship only `config.override.example.ini`; the real `config.override.ini` is git-ignored.
+
 Required sections/keys are shown in [src/coreomics_fs/config.example.ini](src/coreomics_fs/config.example.ini): `[paths]` (canonical_root, views_root, submissions_db_directory, date_format, log_name, error_log), `[api]` (api_key, api_base_url), `[retain]` (daily, weekly, monthly). The optional `[permissions]` section (group, owner) enables filesystem deletion-protection — see Architecture below.
 
 When importing `cfg["paths"]["date_format"]` from INI, `%` must be doubled (e.g. `%%Y_%%m_%%d`) — configparser's interpolation rule.

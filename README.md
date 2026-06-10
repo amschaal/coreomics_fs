@@ -109,6 +109,23 @@ The first file found wins ([src/coreomics_fs/config.py:7-11](src/coreomics_fs/co
 
 If none of these exist, the CLI prints all three searched paths and exits.
 
+### Admin overrides (`config.override.ini`)
+
+After the base config is chosen, an optional **override** file is layered on top
+of it, per key — so a deployer can lock keys (e.g. `canonical_root`, `views_root`)
+that a user's own config must not change. It's found at (first hit):
+
+1. `$CONFIG_OVERRIDE_PATH`, if set
+2. `<package_dir>/config.override.ini`
+
+Only the keys present in the override are replaced; everything else still comes
+from the base config. When the override changes a value the base config had set,
+the tool prints a one-line notice to stderr so the user sees why their setting was
+ignored. Copy [src/coreomics_fs/config.override.example.ini](src/coreomics_fs/config.override.example.ini)
+to `config.override.ini` to use it. This is a safeguard against user error, not a
+security boundary — it relies on the override living somewhere users can't edit
+(an admin-owned install directory).
+
 ### `date_format` and the `%%` rule
 
 In the `[paths]` section, `date_format` needs **doubled percent signs** (e.g. `%%Y_%%m_%%d`) because configparser performs `%`-interpolation on values. The example file already has this right; preserve the doubling when editing.
