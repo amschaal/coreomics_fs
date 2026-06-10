@@ -470,6 +470,13 @@ def main(argv=None):
     parser.add_argument("--no-readme", action="store_true", help="Skip per-project README.md generation (submission.json is still refreshed).")
     parser.add_argument("--updated-days", type=int, metavar="N", help="Only refresh projects whose submission was updated in the last N days (default: all).")
     parser.add_argument("--enforce-permissions", action="store_true", help="Apply the [permissions] ownership/mode policy across the whole canonical + views trees and exit (one-time migration). Run as root to also chown to the configured owner.")
+    phase = parser.add_mutually_exclusive_group()
+    phase.add_argument("--canonical-only", action="store_true",
+        help="Only refresh submission.json + README.md; skip building view trees, "
+             "permission enforcement on views, and pruning.")
+    phase.add_argument("--views-only", action="store_true",
+        help="Only build the view trees (and prune/enforce); skip the "
+             "submission.json/README refresh pass.")
     args = parser.parse_args(argv)
 
     # The canonical and views trees must be disjoint: the build re-modes and
@@ -520,7 +527,10 @@ def main(argv=None):
     # Refresh per-project .submission/submission.json (when the record's `updated`
     # has advanced) and (re)generate README.md when missing/stale. README rendering
     # expects JSON-style keys, so this pass is skipped for CSV input.
-    if not is_csv:
+    if is_csv and args.canonical_only:
+        print("--canonical-only has nothing to do for CSV input "
+              "(no submission.json/README pass); building views.", file=sys.stderr)
+    if not is_csv and not args.views_only:
         from ..cli.readme import ensure_readme
         cutoff_ts = None
         if args.updated_days is not None:
@@ -549,6 +559,9 @@ def main(argv=None):
             except Exception as e:
                 print(f"Refresh skipped for id={proj.get('id') or proj.get('ID')}: {e}")
         print(f"Refreshed {refreshed} submission.json, wrote {readmes} README.md")
+
+    if args.canonical_only:
+        return
 
     for view, comps in VIEWS.items():
         # temporary staging area
