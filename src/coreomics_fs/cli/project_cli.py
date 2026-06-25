@@ -26,6 +26,7 @@ from .submission import Submission, DuplicatePathError, SharesExistError
 
 from ..config import load_config
 from ..db.sqlite_submissions import SubmissionsDB
+from .api import ApiError
 
 # ---------------------------------------------------------------------- #
 # Helper: locate the nearest `.submission/submission.json`
@@ -289,7 +290,7 @@ def main() -> None:
     # Dispatch to the selected command
     try:
         args.func(args, sub)
-    except urllib.error.HTTPError as e:
+    except ApiError as e:
         _emit_error(e, as_json=args.json)
         sys.exit(1)
     except urllib.error.URLError as e:
@@ -298,9 +299,9 @@ def main() -> None:
 
 
 def _emit_error(exc: Exception, as_json: bool = False) -> None:
-    """Render an HTTP/URL error as a clean human message or a JSON object on stderr."""
-    if isinstance(exc, urllib.error.HTTPError):
-        body = getattr(exc, "body", "") or ""
+    """Render an API/URL error as a clean human message or a JSON object on stderr."""
+    if isinstance(exc, ApiError) and exc.status is not None:
+        body = exc.body or ""
         parsed = None
         if body:
             try:
@@ -311,8 +312,8 @@ def _emit_error(exc: Exception, as_json: bool = False) -> None:
         if as_json:
             payload = {
                 "error": True,
-                "status_code": exc.code,
-                "reason": str(exc.reason),
+                "status_code": exc.status,
+                "reason": exc.reason,
                 "url": exc.url,
             }
             if parsed is not None:
@@ -322,7 +323,7 @@ def _emit_error(exc: Exception, as_json: bool = False) -> None:
             sys.stderr.write(json.dumps(payload) + "\n")
             return
 
-        sys.stderr.write(f"Error: HTTP {exc.code} {exc.reason}\n")
+        sys.stderr.write(f"Error: HTTP {exc.status} {exc.reason}\n")
         if isinstance(parsed, dict):
             for key, val in parsed.items():
                 if key in ("status_code", "authenticated"):
@@ -334,12 +335,14 @@ def _emit_error(exc: Exception, as_json: bool = False) -> None:
                     sys.stderr.write(f"  {key}: {val}\n")
         elif parsed is not None:
             sys.stderr.write(f"  {parsed}\n")
+        elif exc.detail:
+            sys.stderr.write(f"  {exc.detail}\n")
         elif body:
             sys.stderr.write(f"  {body}\n")
         return
 
-    # URLError (connection refused, DNS failure, etc.)
-    reason = getattr(exc, "reason", str(exc))
+    # ApiError with no status (connection failure) or a raw URLError.
+    reason = getattr(exc, "reason", None) or str(exc)
     if as_json:
         sys.stderr.write(json.dumps({"error": True, "reason": str(reason)}) + "\n")
     else:

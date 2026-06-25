@@ -1,21 +1,28 @@
 import urllib.request
+import urllib.error
 import json
 import configparser
 import os
 import sqlite3
+import sys
 import argparse
 import datetime
 from pathlib import Path
 from ..config import load_config
 from ..db.sqlite_submissions import SubmissionsDB
-from ..cli.api import ApiClient, SubmissionAPI
+from ..cli.api import ApiClient, SubmissionAPI, ApiError
 
 
 def get_json(url: str, api_key: str) -> dict:
     req = urllib.request.Request(url)
     req.add_header("Authorization", f"Token {api_key}")
-    with urllib.request.urlopen(req) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        raise ApiError.from_http_error(e, url) from None
+    except urllib.error.URLError as e:
+        raise ApiError.from_url_error(e, url) from None
 
 
 def fetch_all_from_api(api_base_url: str, api_key: str, page_size: int = 100, lab: str | None = None, updated_since: str | None = None):
@@ -187,7 +194,11 @@ def main(argv=None):
     else:
         if updated_since:
             print(f"Only fetching submissions updated on or after {updated_since} (last {args.updated_days} day(s)).")
-        submissions = fetch_all_from_api(args.api_base, args.api_key, page_size=args.page_size, lab=args.lab, updated_since=updated_since)
+        try:
+            submissions = fetch_all_from_api(args.api_base, args.api_key, page_size=args.page_size, lab=args.lab, updated_since=updated_since)
+        except ApiError as e:
+            sys.stderr.write(f"Error fetching submissions: {e}\n")
+            sys.exit(1)
 
     db = SubmissionsDB(db_path)
     db.init_db()
@@ -209,7 +220,12 @@ def main(argv=None):
         print("Skipping bioshare shares sync (--no-shares).")
     else:
         api = SubmissionAPI(ApiClient(args.api_base, args.api_key))
-        shares = api.list_all_shares(args.lab)
+        try:
+            shares = api.list_all_shares(args.lab)
+        except ApiError as e:
+            sys.stderr.write(f"Error fetching bioshare shares: {e}\n")
+            db.close()
+            sys.exit(1)
         upserted, deleted = db.sync_all_shares(shares)
         print(f"Synced {upserted} share(s) ({deleted} deleted) for lab {args.lab}.")
 

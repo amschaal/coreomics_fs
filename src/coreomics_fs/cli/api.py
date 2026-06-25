@@ -10,8 +10,108 @@ from pathlib import Path
 import json
 import urllib.parse
 import urllib.request
+import urllib.error
 from typing import Any, Dict, Optional
 from ..config import load_config
+
+
+# Short, human-readable hints keyed by HTTP status. These explain the most
+# common cause for each status against this API so the CLI message points the
+# user at a fix instead of a bare "HTTP Error 403: Forbidden".
+_STATUS_HINTS = {
+    400: "the request was malformed (check query parameters / payload)",
+    401: "the API token is missing or invalid (check [api] api_key in config)",
+    403: "the API token is valid but not authorized for this resource "
+         "(check [api] api_key and that the token's account may access this lab)",
+    404: "the URL or resource was not found "
+         "(check [api] api_base_url and any submission / lab id)",
+    429: "rate limited by the server; retry after a short wait",
+    500: "the server hit an internal error; retry later or contact the API admin",
+    502: "bad gateway; the API server may be down or restarting",
+    503: "the API service is unavailable; retry later",
+}
+
+
+def _extract_detail(body: Optional[str]) -> Optional[str]:
+    """Pull a human-readable message out of an error response body.
+
+    Django REST Framework errors are usually JSON like ``{"detail": "..."}`` or
+    field-keyed lists; fall back to a trimmed snippet of the raw body otherwise.
+    """
+    if not body:
+        return None
+    try:
+        parsed = json.loads(body)
+    except (ValueError, TypeError):
+        text = body.strip()
+        return text[:500] if text else None
+    if isinstance(parsed, dict):
+        for key in ("detail", "error", "message", "non_field_errors"):
+            val = parsed.get(key)
+            if val:
+                return val if isinstance(val, str) else json.dumps(val)
+        return json.dumps(parsed)[:500]
+    if isinstance(parsed, (list, tuple)):
+        return json.dumps(list(parsed))[:500]
+    return str(parsed)[:500]
+
+
+class ApiError(Exception):
+    """An API request failed.
+
+    Carries the structured pieces (``status``, ``reason``, ``url``, ``body``,
+    ``detail``) so callers can render JSON, while ``str(err)`` is a complete,
+    human-readable message including the server's reason and a fix hint.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status: Optional[int] = None,
+        reason: Optional[str] = None,
+        url: Optional[str] = None,
+        body: Optional[str] = None,
+        detail: Optional[str] = None,
+    ):
+        super().__init__(message)
+        self.status = status
+        self.reason = reason
+        self.url = url
+        self.body = body
+        self.detail = detail
+
+    @classmethod
+    def from_http_error(cls, exc: "urllib.error.HTTPError", url: str) -> "ApiError":
+        try:
+            body = exc.read().decode("utf-8", errors="replace")
+        except Exception:
+            body = ""
+        detail = _extract_detail(body)
+        hint = _STATUS_HINTS.get(exc.code)
+        parts = [f"HTTP {exc.code} {exc.reason} for {url}"]
+        if detail:
+            parts.append(f"server said: {detail}")
+        if hint:
+            parts.append(f"hint: {hint}")
+        return cls(
+            "; ".join(parts),
+            status=exc.code,
+            reason=str(exc.reason),
+            url=url,
+            body=body,
+            detail=detail,
+        )
+
+    @classmethod
+    def from_url_error(cls, exc: "urllib.error.URLError", url: str) -> "ApiError":
+        reason = getattr(exc, "reason", exc)
+        return cls(
+            f"Could not reach the API at {url}: {reason} "
+            f"(hint: check [api] api_base_url and network connectivity)",
+            reason=str(reason),
+            url=url,
+        )
 
 # def load_config(path: Optional[Path] = None) -> Dict[str, str]:
 #     """Load configuration from `config.yaml` in the repo root by default.
@@ -75,10 +175,9 @@ class ApiClient:
             with urllib.request.urlopen(req) as resp:
                 raw_resp = resp.read()
         except urllib.error.HTTPError as e:
-            err_body = e.read().decode("utf-8", errors="replace")
-            new_exc = urllib.error.HTTPError(e.url, e.code, e.reason, e.headers, None)
-            new_exc.body = err_body
-            raise new_exc from None
+            raise ApiError.from_http_error(e, url) from None
+        except urllib.error.URLError as e:
+            raise ApiError.from_url_error(e, url) from None
         if not raw_resp:
             return None
         if raw:
@@ -173,7 +272,12 @@ class SubmissionAPI:
         else:
             url = self.client._build_url(f"/api/submissions/{submission_id}/download/?format={format}&data=submission")
         req = urllib.request.Request(url, headers={"Authorization": f"Token {self.client.api_key}"})
-        with urllib.request.urlopen(req) as resp:
-            return resp.read()
-__all__ = ["load_config", "ApiClient", "SubmissionAPI"]
+        try:
+            with urllib.request.urlopen(req) as resp:
+                return resp.read()
+        except urllib.error.HTTPError as e:
+            raise ApiError.from_http_error(e, url) from None
+        except urllib.error.URLError as e:
+            raise ApiError.from_url_error(e, url) from None
+__all__ = ["load_config", "ApiClient", "SubmissionAPI", "ApiError"]
 
